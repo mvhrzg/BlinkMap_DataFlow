@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    TextView msgTextView = (TextView) findViewById(R.id.currentLat);
+    msgTextView.setText(String.valueOf(currentLatitude));
+    <item name="curr" type="id">msgTextView</item>
+    <string name="currLon">curr</string>
+</resources>
