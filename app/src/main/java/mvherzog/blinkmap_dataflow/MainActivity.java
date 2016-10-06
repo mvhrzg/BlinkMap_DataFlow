@@ -51,7 +51,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private LocationRequest request;
     private BluetoothAdapter adapter;
     private BluetoothDevice device;
-    private ParcelUuid[] uuids;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -88,6 +87,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 }
             }
             ConnectionThread connection = new ConnectionThread(this.device);
+            //TODO: Fix this and figure out callback
+            // TODO: 10/6/2016 GET CONNECTION WORKING!!!!!!!!!!!!! 
+//            BleDevicesScanner bleScanner = new BleDevicesScanner(adapter, connection.uuids, new ScanCallback());
             connection.start();
         }
 

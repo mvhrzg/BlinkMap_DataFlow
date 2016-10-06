@@ -17,14 +17,16 @@ import java.util.UUID;
 
 public class ConnectionThread extends Thread
 {
-    private static final String TAG = MainActivity.class.getSimpleName();;
+    private static final String TAG = MainActivity.class.getSimpleName();
+    ;
     private final BluetoothSocket socket;
     private final BluetoothDevice device;
     private UUID CONNECTION_UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb");
     protected ConnectedThread connected;
     BluetoothAdapter adapter;
+    ParcelUuid[] uuids;
 
-    ConnectionThread(BluetoothDevice device)
+    public ConnectionThread(BluetoothDevice device)
     {
         Log.i(TAG, "CONNECTION.CONSTRUCTOR");
         BluetoothSocket tmp_socket = null;
@@ -35,7 +37,7 @@ public class ConnectionThread extends Thread
         {
             Method getUuidsMethod = BluetoothAdapter.class.getDeclaredMethod("getUuids", null);
 
-            ParcelUuid[] uuids = (ParcelUuid[]) getUuidsMethod.invoke(adapter, null);
+            uuids = (ParcelUuid[]) getUuidsMethod.invoke(adapter, null);
             for (ParcelUuid uuid : uuids)
             {
                 Log.d(TAG, "UUID: " + uuid.getUuid().toString());
