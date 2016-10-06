@@ -2,8 +2,10 @@ package mvherzog.blinkmap_dataflow;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.support.annotation.RequiresApi;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
@@ -18,7 +20,7 @@ import java.util.UUID;
  * Created by mherzog on 10/5/2016.
  */
 
-public class BleDevicesScanner {
+class BleDevicesScanner {
     private static final String TAG = BleDevicesScanner.class.getSimpleName();
     private static final long kScanPeriod = 20 * 1000; // scan period in milliseconds
 
@@ -104,6 +106,7 @@ public class BleDevicesScanner {
             this.scanRecord = scanRecord;
         }
 
+        @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
         @Override
         public void run() {
             leScanCallback.onLeScan(device, rssi, scanRecord);
