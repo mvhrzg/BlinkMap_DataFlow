@@ -3,22 +3,13 @@ package mvherzog.blinkmap_dataflow;
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothSocket;
-import android.bluetooth.le.BluetoothLeScanner;
-import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanResult;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
-import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Message;
-import android.os.ParcelUuid;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
-import android.support.annotation.RequiresApi;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
@@ -31,14 +22,7 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.LocationListener;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks,
                                                                GoogleApiClient.OnConnectionFailedListener,
@@ -79,17 +63,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                         this.device = device;
                         this.device.fetchUuidsWithSdp();
 
-                        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-
-                        Log.d(TAG, "Device paired= " + this.device.getName() + " : " + this.device.getAddress());
-                        Log.d(TAG, "Device uuids= " + this.device.getUuids());
+//                        Log.d(TAG, "Device paired= " + this.device.getName() + " : " + this.device.getAddress());
+//                        Log.d(TAG, "Device uuids= " + this.device.getUuids());
                     }
                 }
             }
             ConnectionThread connection = new ConnectionThread(this.device);
-            //TODO: Fix this and figure out callback
-            // TODO: 10/6/2016 GET CONNECTION WORKING!!!!!!!!!!!!! 
-//            BleDevicesScanner bleScanner = new BleDevicesScanner(adapter, connection.uuids, new ScanCallback());
             connection.start();
         }
 
