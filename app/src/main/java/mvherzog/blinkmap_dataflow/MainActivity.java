@@ -42,8 +42,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private BluetoothDevice device;
     private String adafruitAddress;
     private final String adafruitName = "Adafruit Bluefruit LE";
-    private ArrayList<BluetoothDevice> devices = new ArrayList<BluetoothDevice>();
-    private boolean found = false;
+    private ArrayList<BluetoothDevice> devices = new ArrayList<>();
+    private boolean isConnected = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -71,96 +71,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         client.connect();
     }
 
-    private void connectBLE(BluetoothDevice d, String address)
-    {
-        pairDevice(d);
-        Set<BluetoothDevice> pairedDevices = adapter.getBondedDevices();
-        if (pairedDevices.size() > 0)
-        {
-            for (BluetoothDevice device : pairedDevices)
-            {
-                if (device.getAddress().equals(address))
-                {
-                    Log.d(TAG, "Found bonded Adafruit");
-                    found = true;
-//                    device.fetchUuidsWithSdp();
-                }
-            }
-            if (!found)
-            {
-                Log.i(TAG, "Couldn't find Adafruit");
-            }
-        }
-    }
 
-    @Override
-    protected void onDestroy()
-    {
-        unregisterReceiver(receiver);
-        super.onDestroy();
-    }
-
-    private final BroadcastReceiver receiver = new BroadcastReceiver()
-    {
-        public void onReceive(Context context, Intent intent)
-        {
-            String action = intent.getAction();
-            if (adapter != null)
-            {
-                if (!adapter.isEnabled())
-                {
-                    Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                    startActivityForResult(enableBtIntent, 1);
-                }
-
-                if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action))
-                {
-                    final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
-
-                    if (state == BluetoothAdapter.STATE_ON)
-                    {
-                        Log.d(TAG, "Enabled");
-                    }
-                }
-                else if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action))
-                {
-                    devices = new ArrayList<>();
-                }
-                else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action))
-                {
-                    Intent newIntent = new Intent(MainActivity.this, MainActivity.class);
-                    newIntent.putParcelableArrayListExtra("device.list", devices);
-                    startActivity(newIntent);
-                }
-                else if (BluetoothDevice.ACTION_FOUND.equals(action))
-                {
-                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                    devices.add(device);
-                    Log.d(TAG, "Found device " + device.getName());
-                    if (!device.getName().equals("null"))
-                    {
-                        if (device.getName().equals(adafruitName))
-                        {
-                            connectBLE(device, device.getAddress());
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    private void pairDevice(BluetoothDevice device)
-    {
-        try
-        {
-            Method method = device.getClass().getMethod("createBond", (Class[]) null);
-            method.invoke(device, (Object[]) null);
-        }
-        catch (Exception e)
-        {
-            e.printStackTrace();
-        }
-    }
 
     @Override
     public void onLocationChanged(Location location)
@@ -273,6 +184,107 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     {
         super.onStop();
         client.disconnect();
+    }
+
+    /**
+     * BLE Connection Methods & Properties
+     * @param d
+     * @param address
+     */
+
+    private void connectBLE(BluetoothDevice d, String address)
+    {
+        pairDevice(d);
+        Set<BluetoothDevice> pairedDevices = adapter.getBondedDevices();
+        if (pairedDevices.size() > 0)
+        {
+            for (BluetoothDevice device : pairedDevices)
+            {
+                if (device.getAddress().equals(address))
+                {
+                    Log.d(TAG, "Found bonded Adafruit");
+                    isConnected = true;
+//                    device.fetchUuidsWithSdp();
+                }
+            }
+            if (!isConnected)
+            {
+                Log.i(TAG, "Couldn't find Adafruit");
+            }
+        }
+    }
+
+    @Override
+    protected void onDestroy()
+    {
+        unregisterReceiver(receiver);
+        super.onDestroy();
+    }
+
+    private final BroadcastReceiver receiver = new BroadcastReceiver()
+    {
+        public void onReceive(Context context, Intent intent)
+        {
+            String action = intent.getAction();
+            if (adapter != null)
+            {
+                if (!adapter.isEnabled())
+                {
+                    Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                    startActivityForResult(enableBtIntent, 1);
+                }
+
+                if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action))
+                {
+                    final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
+
+                    if (state == BluetoothAdapter.STATE_ON)
+                    {
+                        Log.d(TAG, "Enabled");
+                    }
+                }
+                else if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action))
+                {
+                    devices = new ArrayList<>();
+                }
+                else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action))
+                {
+                    Intent newIntent = new Intent(MainActivity.this, MainActivity.class);
+                    newIntent.putParcelableArrayListExtra("device.list", devices);
+                    startActivity(newIntent);
+                }
+                else if (BluetoothDevice.ACTION_FOUND.equals(action))
+                {
+                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    devices.add(device);
+                    Log.d(TAG, "Found device " + device.getName());
+                    if (!device.getName().equals("null"))
+                    {
+                        if (device.getName().equals(adafruitName))
+                        {
+                            connectBLE(device, device.getAddress());
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    private void pairDevice(BluetoothDevice device)
+    {
+        try
+        {
+            Method method = device.getClass().getMethod("createBond", (Class[]) null);
+            method.invoke(device, (Object[]) null);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+
+    private boolean isConnected(){
+        return isConnected;
     }
 }
 
