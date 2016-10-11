@@ -3,7 +3,10 @@ package mvherzog.blinkmap_dataflow;
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
@@ -22,6 +25,8 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.LocationListener;
 
+import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Set;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks,
@@ -35,6 +40,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private LocationRequest request;
     private BluetoothAdapter adapter;
     private BluetoothDevice device;
+    private String adafruitAddress;
+    private final String adafruitName = "Adafruit Bluefruit LE";
+    private ArrayList<BluetoothDevice> devices = new ArrayList<BluetoothDevice>();
+    private boolean found = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -44,33 +53,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         setContentView(R.layout.activity_main);
 
         adapter = BluetoothAdapter.getDefaultAdapter();
-
-        if (adapter != null)
-        {
-            if (!adapter.isEnabled())
-            {
-                Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                startActivityForResult(enableBtIntent, 1);
-            }
-
-            Set<BluetoothDevice> pairedDevices = adapter.getBondedDevices();
-            if (pairedDevices.size() > 0)
-            {
-                for (BluetoothDevice device : pairedDevices)
-                {
-                    if (device.getName().equals("Adafruit Bluefruit LE"))
-                    {
-                        this.device = device;
-                        this.device.fetchUuidsWithSdp();
-
-//                        Log.d(TAG, "Device paired= " + this.device.getName() + " : " + this.device.getAddress());
-//                        Log.d(TAG, "Device uuids= " + this.device.getUuids());
-                    }
-                }
-            }
-            ConnectionThread connection = new ConnectionThread(this.device);
-            connection.start();
-        }
+        adapter.startDiscovery();
+        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+        registerReceiver(receiver, filter);
 
         client = new GoogleApiClient.Builder(this)
                 .addConnectionCallbacks(this)
@@ -84,6 +69,97 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 .setFastestInterval(100);
 
         client.connect();
+    }
+
+    private void connectBLE(BluetoothDevice d, String address)
+    {
+        pairDevice(d);
+        Set<BluetoothDevice> pairedDevices = adapter.getBondedDevices();
+        if (pairedDevices.size() > 0)
+        {
+            for (BluetoothDevice device : pairedDevices)
+            {
+                if (device.getAddress().equals(address))
+                {
+                    Log.d(TAG, "Found bonded Adafruit");
+                    found = true;
+//                    device.fetchUuidsWithSdp();
+                }
+            }
+            if (!found)
+            {
+                Log.i(TAG, "Couldn't find Adafruit");
+            }
+        }
+    }
+
+    @Override
+    protected void onDestroy()
+    {
+        unregisterReceiver(receiver);
+        super.onDestroy();
+    }
+
+    private final BroadcastReceiver receiver = new BroadcastReceiver()
+    {
+        public void onReceive(Context context, Intent intent)
+        {
+            String action = intent.getAction();
+            if (adapter != null)
+            {
+                if (!adapter.isEnabled())
+                {
+                    Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                    startActivityForResult(enableBtIntent, 1);
+                }
+
+                if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action))
+                {
+                    final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
+
+                    if (state == BluetoothAdapter.STATE_ON)
+                    {
+                        Log.d(TAG, "Enabled");
+                    }
+                }
+                else if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action))
+                {
+                    devices = new ArrayList<>();
+                }
+                else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action))
+                {
+                    Intent newIntent = new Intent(MainActivity.this, MainActivity.class);
+                    newIntent.putParcelableArrayListExtra("device.list", devices);
+                    startActivity(newIntent);
+                }
+                else if (BluetoothDevice.ACTION_FOUND.equals(action))
+                {
+                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    devices.add(device);
+                    Log.d(TAG, "Found device " + device.getName());
+                    if (!device.getName().equals("null"))
+                    {
+                        if (device.getName().equals(adafruitName))
+                        {
+                            connectBLE(device, device.getAddress());
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    private void pairDevice(BluetoothDevice device)
+    {
+        try
+        {
+            Method method = device.getClass().getMethod("createBond", (Class[]) null);
+            method.invoke(device, (Object[]) null);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -143,6 +219,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public void onConnectionSuspended(int i)
     {
         Log.i(TAG, "Location Serviced suspended. Please reconnect");
+        onDestroy();
     }
 
     @Override
@@ -163,6 +240,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         else
         {
             Log.i(TAG, "Location services connection failed with code " + connectionResult.getErrorCode());
+            onDestroy();
         }
     }
 
@@ -196,18 +274,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         super.onStop();
         client.disconnect();
     }
-
-    /**
-     * Created by mherzog on 10/3/2016.
-     */
-
-
-
-
-
-
-
-
 }
 
 
