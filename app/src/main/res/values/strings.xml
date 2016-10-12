@@ -1,6 +1,9 @@
 <!--suppress AndroidDomInspection -->
 <resources>
-    <string name="app_name">BlinkMap_DataFlow</string>
-    String s = getString();
-    <string name="currentLat" type="string">s</string>
+    <string name="app_name">BlinkMap</string>
+    <string name="welcome" type="string">
+        Welcome to BlinkMap!
+        <br></br>
+        Please make sure your Adafruit is powered and named "Adafruit Bluefruit LE"
+    </string>
 </resources>
