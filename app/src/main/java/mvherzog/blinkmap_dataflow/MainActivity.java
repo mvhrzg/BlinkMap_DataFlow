@@ -3,6 +3,11 @@ package mvherzog.blinkmap_dataflow;
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothSocket;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -31,6 +36,7 @@ import com.google.android.gms.location.LocationListener;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -51,6 +57,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     BluetoothSocket socket = null;
     public static String EXTRA_ADDRESS;
     public static final UUID ADA_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    public BluetoothGatt gatt;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -70,8 +77,20 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 .setInterval(1000)
                 .setFastestInterval(100);
 
-        client.connect();
-
+        initializeAdapter();
+        if (adapterInitialized())
+        {
+            IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+            registerReceiver(receiver, filter);
+            if (isBLEPaired(ADAFRUIT_NAME))
+            {
+                Log.d(TAG, "BLE is paired");
+                //Connect GoogleAPI client and setup GATT
+                client.connect();
+                EXTRA_ADDRESS = adafruit.getAddress();
+                setupGatt();
+            }
+        }
         btnConnect = (Button) findViewById(R.id.btnConnect);
         btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
 
@@ -92,44 +111,121 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 //                disconnect(); //close connection
 //            }
 //        });
+    }
 
-        initializeAdapter();
-        if (adapterInitialized())
+    private final BluetoothGattCallback btleGattCallback = new BluetoothGattCallback()
+    {
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic)
         {
-            IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-            registerReceiver(receiver, filter);
-            if (isBLEPaired(ADAFRUIT_NAME))
+            //read the characteristic data
+            byte[] data = characteristic.getValue();
+        }
+
+        @Override
+        public void onConnectionStateChange(final BluetoothGatt gatt, final int status, final int newState)
+        {
+            // this will get called when a device connects or disconnects
+        }
+
+        @Override
+        public void onServicesDiscovered(final BluetoothGatt gatt, final int status)
+        {
+            List<BluetoothGattService> services = gatt.getServices();
+            for (BluetoothGattService service : services)
             {
-                Log.d(TAG, "BLE is paired");
-                EXTRA_ADDRESS = adafruit.getAddress();
-                try
+                List<BluetoothGattCharacteristic> characteristics = service.getCharacteristics();
+                for (BluetoothGattCharacteristic characteristic : characteristics)
                 {
-                    socket = adafruit.createInsecureRfcommSocketToServiceRecord(ADA_UUID);//create a RFCOMM (SPP) connection
-                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery();
-                    socket.connect();
+                    for (BluetoothGattDescriptor descriptor : characteristic.getDescriptors())
+                    {
+                        //find descriptor UUID that matches Client Characteristic Configuration (0x2902)
+                        // and then call setValue on that descriptor
+
+                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                        gatt.writeDescriptor(descriptor);
+                    }
                 }
-                catch(IOException io){
-                    Log.d(TAG, io.getMessage());
-                }
-//                setLEDConnection(adafruit);
             }
         }
-    }
+    };
 
     private void sendData()
     {
-        Log.d(TAG, "send data");
-        if (socket != null)
+        Log.d(TAG, "sendData()");
+        boolean conn = false;
+        if (gatt != null)
         {
             try
             {
-                socket.getOutputStream().write("TO".toString().getBytes());
+                adapter.cancelDiscovery();
+                gatt.connect();
+                conn = true;
             }
-            catch (IOException e)
+            catch (Exception io)
             {
-                msg("Error");
+                Log.d(TAG, "Exception: " + io.getLocalizedMessage());
             }
         }
+        if(conn){
+            gatt.beginReliableWrite();
+        }
+//        try
+//        {
+//            adapter.cancelDiscovery();
+//            socket = adafruit.createInsecureRfcommSocketToServiceRecord(ADA_UUID);//create a RFCOMM (SPP) connection
+//            Log.d(TAG, "attempting socket.connect()...");
+//            socket.connect();
+//            Log.d(TAG, "after socket.connect()");
+//        }
+//        catch (IOException io)
+//        {
+//            Log.d(TAG, "exception below:");
+//            Log.d(TAG, io.getMessage());
+//        }
+//        Log.d(TAG, "send data");
+//        if (socket != null)
+//        {
+//            try
+//            {
+//                socket.getOutputStream().write("TO".toString().getBytes());
+//            }
+//            catch (IOException e)
+//            {
+//                msg("Error");
+//            }
+//        }
+    }
+
+    private void setupGatt()
+    {
+        gatt = adafruit.connectGatt(MainActivity.this, false, btleGattCallback);
+        gatt.discoverServices();
+        int status = 0;
+        btleGattCallback.onServicesDiscovered(gatt, status);
+//        if (status == 0)
+//        {
+//            List<BluetoothGattService> services = gatt.getServices();
+//            for (BluetoothGattService service : services)
+//            {
+//                List<BluetoothGattCharacteristic> characteristics = service.getCharacteristics();
+//                for (BluetoothGattCharacteristic characteristic : characteristics)
+//                {
+//                    for (BluetoothGattDescriptor descriptor : characteristic.getDescriptors())
+//                    {
+//                        Log.d(TAG, String.format("Characteristic: %s. Descriptor: %s", characteristic.toString(), descriptor));
+//                        //find descriptor UUID that matches Client Characteristic Configuration (0x2902)
+//                        // and then call setValue on that descriptor
+//
+//                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+//                        gatt.writeDescriptor(descriptor);
+//                    }
+//                }
+//            }
+//        gatt.disconnect();
+//        gatt.close();
+//        }
     }
 
     private void msg(String s)
@@ -252,6 +348,16 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         client.disconnect();
         super.onStop();
     }
+
+    @Override
+    protected void onDestroy()
+    {
+        Log.d(TAG, "onDestroy()");
+        unregisterReceiver(receiver);
+        gatt.disconnect();
+        gatt.close();
+        super.onDestroy();
+    }
     //endregion
 
     //region BLE Connection Methods & Properties
@@ -271,6 +377,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 if (device.getName().equals(name))
                 {
                     adafruit = device;
+//                    adapter.cancelDiscovery();
                     return true;
                 }
             }
@@ -284,17 +391,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //First argument is probably wrong
         ledIntent.putExtra(EXTRA_ADDRESS, device.getAddress());
         startActivity(ledIntent);
-    }
-
-    @Override
-    protected void onDestroy()
-    {
-        Log.d(TAG, "onDestroy()");
-        unregisterReceiver(receiver);
-        super.onDestroy();
-        if(adapter != null){
-            adapter.cancelDiscovery();
-        }
     }
 
     private void pairDevice(BluetoothDevice device)
@@ -317,8 +413,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private void initializeAdapter()
     {
         adapter = BluetoothAdapter.getDefaultAdapter();
-
-
 
         adapter.startDiscovery();
         if (adapter != null)
@@ -381,6 +475,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 {
                     if (foundDevice.getName().equals(ADAFRUIT_NAME))
                     {
+                        adapter.cancelDiscovery();
                         pairDevice(foundDevice);
                     }
                 }
