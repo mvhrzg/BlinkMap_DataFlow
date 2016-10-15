@@ -13,5 +13,29 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/welcome"/>
+        android:text="@string/welcome"
+        android:layout_alignParentTop="true"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="8dp"
+        android:textAppearance="@style/TextAppearance.AppCompat.Headline"
+        android:textStyle="normal|bold"
+        android:textColor="@android:color/holo_orange_dark"/>
+
+    <Button
+        android:text="@string/connect"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="100dp"
+        android:id="@+id/btnConnect"
+        android:layout_below="@+id/textView2"
+        android:layout_centerHorizontal="true"/>
+
+    <Button
+        android:text="@string/disconnect"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="68dp"
+        android:id="@+id/btnDisconnect"
+        android:layout_below="@+id/btnConnect"
+        android:layout_centerHorizontal="true"/>
 </RelativeLayout>

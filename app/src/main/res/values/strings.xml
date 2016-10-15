@@ -1,9 +1,8 @@
 <!--suppress AndroidDomInspection -->
 <resources>
     <string name="app_name">BlinkMap</string>
-    <string name="welcome" type="string">
-        Welcome to BlinkMap!
-        <br></br>
-        Please make sure your Adafruit is powered and named "Adafruit Bluefruit LE"
-    </string>
+    <string name="welcome">Welcome to BlinkMap!</string>
+    <string name="success">Connected Successfully!</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
 </resources>

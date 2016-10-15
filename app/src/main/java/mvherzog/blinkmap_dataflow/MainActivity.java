@@ -3,6 +3,7 @@ package mvherzog.blinkmap_dataflow;
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -16,6 +17,8 @@ import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
 import android.widget.Toast;
 
 import com.google.android.gms.appindexing.AppIndex;
@@ -25,26 +28,29 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.LocationListener;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Set;
+import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks,
                                                                GoogleApiClient.OnConnectionFailedListener,
                                                                LocationListener
 {
+    Button btnConnect, btnDisconnect;
+    public static final String TAG = MainActivity.class.getSimpleName();
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
     private final int REQUEST_PERMISSION_FINE_LOCATION = 1;
     private final String ADAFRUIT_NAME = "Adafruit Bluefruit LE";
-    private boolean isConnected = false;
     private GoogleApiClient client;
     private LocationRequest request;
     private BluetoothAdapter adapter;
-    private BluetoothDevice connectedAdafruit;
     private ArrayList<BluetoothDevice> devices = new ArrayList<>();
-    private String pairedDeviceAddress;
-    public static final String TAG = MainActivity.class.getSimpleName();
+    public BluetoothDevice adafruit;
+    BluetoothSocket socket = null;
     public static String EXTRA_ADDRESS;
+    public static final UUID ADA_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -52,19 +58,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         super.onCreate(savedInstanceState);
         super.onResume();
         setContentView(R.layout.activity_main);
-
-        initializeAdapter();
-        if (adapterInitialized()){
-            checkIfBleConnected();
-            if(!isConnected){
-                IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-                registerReceiver(receiver, filter);
-            }
-            else{
-                EXTRA_ADDRESS = connectedAdafruit.getAddress();
-                setLEDConnection(connectedAdafruit);
-            }
-        }
 
         client = new GoogleApiClient.Builder(this)
                 .addConnectionCallbacks(this)
@@ -78,8 +71,71 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 .setFastestInterval(100);
 
         client.connect();
+
+        btnConnect = (Button) findViewById(R.id.btnConnect);
+        btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
+
+        btnConnect.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View v)
+            {
+                sendData();
+            }
+        });
+
+//        btnDisconnect.setOnClickListener(new View.OnClickListener()
+//        {
+//            @Override
+//            public void onClick(View v)
+//            {
+//                disconnect(); //close connection
+//            }
+//        });
+
+        initializeAdapter();
+        if (adapterInitialized())
+        {
+            IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+            registerReceiver(receiver, filter);
+            if (isBLEPaired(ADAFRUIT_NAME))
+            {
+                Log.d(TAG, "BLE is paired");
+                EXTRA_ADDRESS = adafruit.getAddress();
+                try
+                {
+                    socket = adafruit.createInsecureRfcommSocketToServiceRecord(ADA_UUID);//create a RFCOMM (SPP) connection
+                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery();
+                    socket.connect();
+                }
+                catch(IOException io){
+                    Log.d(TAG, io.getMessage());
+                }
+//                setLEDConnection(adafruit);
+            }
+        }
     }
 
+    private void sendData()
+    {
+        Log.d(TAG, "send data");
+        if (socket != null)
+        {
+            try
+            {
+                socket.getOutputStream().write("TO".toString().getBytes());
+            }
+            catch (IOException e)
+            {
+                msg("Error");
+            }
+        }
+    }
+
+    private void msg(String s)
+    {
+        Toast.makeText(getApplicationContext(), s, Toast.LENGTH_LONG).show();
+    }
 
     //region Location Services
     @Override
@@ -94,7 +150,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         double currentLongitude = location.getLongitude();
         // TODO: 10/11/2016 Send Lat & Long info to LED, so it can be sent to Adafruit
         // TODO: Follow tutorial (http://www.instructables.com/id/Android-Bluetooth-Control-LED-Part-2/?ALLSTEPS)
-//        Toast.makeText(MainActivity.this, "Latitude= " + currentLatitude + "\n" + "Longitude= " + currentLongitude, Toast.LENGTH_LONG).show();
+        Toast.makeText(MainActivity.this, "Latitude= " + currentLatitude + "\n" + "Longitude= " + currentLongitude, Toast.LENGTH_LONG).show();
         Log.i(TAG, "CurrentLat: " + currentLatitude);
         Log.i(TAG, "CurrentLon: " + currentLongitude);
     }
@@ -191,45 +247,54 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     @Override
     public void onStop()
     {
-        super.onStop();
+        Log.d(TAG, "onStop()");
+//        unregisterReceiver(receiver);
         client.disconnect();
+        super.onStop();
     }
     //endregion
 
     //region BLE Connection Methods & Properties
-    private void checkIfBleConnected()
+
+    /**
+     * Checks Adafruit connection
+     *
+     * @return true if found Adafruit, false otherwise
+     */
+    private boolean isBLEPaired(String name)
     {
         Set<BluetoothDevice> pairedDevices = adapter.getBondedDevices();
         if (pairedDevices.size() > 0)
         {
             for (BluetoothDevice device : pairedDevices)
             {
-                if (device.getAddress().equals(pairedDeviceAddress))
+                if (device.getName().equals(name))
                 {
-                    Log.d(TAG, "Found bonded Adafruit");
-                    Log.i(TAG, "adafruit uuid: " + device.getUuids());
-                    isConnected = true;
-                    device.fetchUuidsWithSdp();
-                    connectedAdafruit = device;
+                    adafruit = device;
+                    return true;
                 }
             }
-
         }
+        return false;
     }
 
     public void setLEDConnection(BluetoothDevice device)
     {
         Intent ledIntent = new Intent(MainActivity.this, LED.class);
         //First argument is probably wrong
-        ledIntent.putExtra(ledIntent.getExtras().toString(), device.getAddress());
+        ledIntent.putExtra(EXTRA_ADDRESS, device.getAddress());
         startActivity(ledIntent);
     }
 
     @Override
     protected void onDestroy()
     {
+        Log.d(TAG, "onDestroy()");
         unregisterReceiver(receiver);
         super.onDestroy();
+        if(adapter != null){
+            adapter.cancelDiscovery();
+        }
     }
 
     private void pairDevice(BluetoothDevice device)
@@ -238,7 +303,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         {
             Method method = device.getClass().getMethod("createBond", (Class[]) null);
             method.invoke(device, (Object[]) null);
-            connectedAdafruit = device;
+            adafruit = device;
         }
         catch (Exception e)
         {
@@ -246,9 +311,15 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         }
     }
 
+    /**
+     * Initializes BluetoothAdapter and creates BLUETOOTH_REQUEST_ENABLE intent
+     */
     private void initializeAdapter()
     {
         adapter = BluetoothAdapter.getDefaultAdapter();
+
+
+
         adapter.startDiscovery();
         if (adapter != null)
         {
@@ -258,7 +329,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 startActivityForResult(enableBtIntent, 1);
             }
         }
-        else{
+        else
+        {
             Toast.makeText(MainActivity.this, "Bluetooth Device unavailable", Toast.LENGTH_SHORT).show();
         }
     }
@@ -296,19 +368,20 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             else if (BluetoothDevice.ACTION_FOUND.equals(action))
             {
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                devices.add(device);
+                if (device != null)
+                {
+                    if (device.getType() == BluetoothDevice.DEVICE_TYPE_LE)
+                    {
+                        Log.d(TAG, "Found " + device.getName());
+                        devices.add(device);
+                    }
+                }
 
                 for (BluetoothDevice foundDevice : devices)
                 {
-                    if (!foundDevice.getName().equals("null"))
+                    if (foundDevice.getName().equals(ADAFRUIT_NAME))
                     {
-                        if (foundDevice.getName().equals(ADAFRUIT_NAME))
-                        {
-                            Log.d(TAG, "Found " + foundDevice.getName());
-                            pairDevice(foundDevice);
-                            pairedDeviceAddress = foundDevice.getAddress();
-                            checkIfBleConnected();
-                        }
+                        pairDevice(foundDevice);
                     }
                 }
             }
