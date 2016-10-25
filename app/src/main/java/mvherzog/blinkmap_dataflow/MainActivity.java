@@ -1,7 +1,6 @@
 package mvherzog.blinkmap_dataflow;
 
 import android.Manifest;
-import android.app.Notification;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
@@ -18,7 +17,6 @@ import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Bundle;
-import android.service.notification.NotificationListenerService;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
@@ -69,8 +67,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private InputStream input;
     private ConnectionThread ct;
 
-    public NotificationReceiver reader;
-//    public NotificationReader reader;
+    public NotificationReceiver nreceiver;
+    public NotificationReader nreader;
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
@@ -78,7 +76,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         super.onResume();
         setContentView(R.layout.activity_main);
         //Might only work if native Notification
-        reader = new NotificationReceiver();
+        nreceiver = new NotificationReceiver();
+        nreader = new NotificationReader();
         IntentFilter filter = new IntentFilter();
         //or .Msg
         filter.addAction("mherzog.blinkmap_dataflow.NotificationReader.Msg");
