@@ -3,6 +3,6 @@
     <string name="app_name">BlinkMap</string>
     <string name="welcome">Welcome to BlinkMap!</string>
     <string name="success">Connected Successfully!</string>
-    <string name="connect">Connect</string>
-    <string name="disconnect">Disconnect</string>
+    <string name="connect">Connect BlinkMap</string>
+    <string name="disconnect">Disconnect BlinkMap</string>
 </resources>

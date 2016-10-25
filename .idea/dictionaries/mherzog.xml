@@ -2,6 +2,9 @@
   <dictionary name="mherzog">
     <words>
       <w>adafruit</w>
+      <w>blinkmap</w>
+      <w>dataflow</w>
+      <w>mvherzog</w>
     </words>
   </dictionary>
 </component>

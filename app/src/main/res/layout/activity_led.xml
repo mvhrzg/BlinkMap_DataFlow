@@ -11,6 +11,7 @@
     android:paddingTop="@dimen/activity_vertical_margin"
     tools:context="mvherzog.blinkmap_dataflow.LED">
 
+    <!--xmlns:app=""-->
     <TextView
         android:text="@string/welcome"
         android:layout_width="wrap_content"
@@ -38,9 +39,8 @@
         android:text="@string/connect"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/textView"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="36dp"
+        android:layout_marginTop="39dp"
         android:id="@+id/btnConnect"
-        />
+        android:layout_below="@+id/textView"
+        android:layout_centerHorizontal="true"/>
 </RelativeLayout>
