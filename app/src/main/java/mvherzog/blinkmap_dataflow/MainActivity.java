@@ -17,6 +17,7 @@ import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
@@ -67,29 +68,20 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private InputStream input;
     private ConnectionThread ct;
 
-    public NotificationReceiver nreceiver;
-    public NotificationReader nreader;
+    public NotificationReader nReader;
+
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
         super.onResume();
         setContentView(R.layout.activity_main);
-        //Might only work if native Notification
-        nreceiver = new NotificationReceiver();
-        nreader = new NotificationReader();
-        IntentFilter filter = new IntentFilter();
-        //or .Msg
-        filter.addAction("mherzog.blinkmap_dataflow.NotificationReader.Msg");
-        registerReceiver(onNotice,filter);
-        //Brings up notification acess screen
-        Intent intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
-        startActivity(intent);
-
-
-        Log.i("Notification?", "Registering receiver");
         LocalBroadcastManager.getInstance(this).registerReceiver(onNotice, new IntentFilter("Msg"));
-        Log.i("Notification?", "After registering receiver");
+
+        //Might only work if native Notification
+        if(checkNotificationEnabled()){
+            startActivity(new Intent(this, NotificationReader.class));
+        }
 
         //Set up Google API client
         client = new GoogleApiClient.Builder(this)
@@ -107,7 +99,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //Set up Google Maps listener HERE
         //TODO: Use 4 pinned tabs in Chrome to launch Google Maps app from BlinkMap
 
-
         //Listen for Bluetooth devices
         initializeAdapter();
 
@@ -122,14 +113,17 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             {
                 //I want to connect and pair the Adafruit here
                 //If pairing is unsuccessful, throw an error
-                if(!adapterInitialized()){
+                if (!adapterInitialized())
+                {
                     toast("Please make sure Bluetooth is turned on.");
                     initializeAdapter();
                 }
-                else{
+                else
+                {
 //                  IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
 //                  registerReceiver(receiver, filter);
-                    if(!isBLEPaired(ADAFRUIT_NAME)){
+                    if (!isBLEPaired(ADAFRUIT_NAME))
+                    {
                         toast("Could not find Adafruit.");
                     }
                     if (isBLEPaired(ADAFRUIT_NAME))
@@ -145,7 +139,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 }
             }
         });
-
 
         btnDisconnect.setOnClickListener(new View.OnClickListener()
         {
@@ -221,12 +214,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 //                ct = new ConnectionThread(adafruit, true, adapter, ADA_UUID);
 
 //                socket.connect();
-            }
+        }
 //            catch (IOException e)
 //            {
 //                e.printStackTrace();
 //            }
-        }
+    }
 
     //Does this force Bluetooth pairing? If not, what exactly is it doing?
     private void setupGatt()
@@ -274,8 +267,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         // TODO: 10/11/2016 Send Lat & Long info to LED, so it can be sent to Adafruit
         // TODO: Follow tutorial (http://www.instructables.com/id/Android-Bluetooth-Control-LED-Part-2/?ALLSTEPS)
 //        toast("Latitude= " + currentLatitude + "\n" + "Longitude= " + currentLongitude);
-        Log.i(TAG, "CurrentLat: " + currentLat);
-        Log.i(TAG, "CurrentLon: " + currentLon);
+//        Log.i(TAG, "CurrentLat: " + currentLat);
+//        Log.i(TAG, "CurrentLon: " + currentLon);
     }
 
     @Override
@@ -380,9 +373,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     protected void onDestroy()
     {
         Log.d(TAG, "onDestroy()");
-//        unregisterReceiver(receiver);
-        gatt.disconnect();
-        gatt.close();
+        unregisterReceiver(onReader);
+//        gatt.disconnect();
+//        gatt.close();
         super.onDestroy();
     }
     //endregion
@@ -514,12 +507,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 //    };
     //endregion
 
-
-
     //region public Notification
-    private BroadcastReceiver onNotice= new BroadcastReceiver() {
+    private BroadcastReceiver onNotice = new BroadcastReceiver()
+    {
         @Override
-        public void onReceive(Context context, Intent intent) {
+        public void onReceive(Context context, Intent intent)
+        {
             Log.d("RECEIVER", "Received!");
             String pack = intent.getStringExtra("package");
             String title = intent.getStringExtra("title");
@@ -535,15 +528,36 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             Log.i("Receiver", String.format("getContext= %s", getApplicationContext()));
         }
     };
-    //endregion
-    class NotificationReceiver extends BroadcastReceiver{
+
+    private BroadcastReceiver onReader = new BroadcastReceiver()
+    {
         @Override
-        public void onReceive(Context context, Intent intent) {
+        public void onReceive(Context context, Intent intent)
+        {
             String temp = intent.getStringExtra("notification_event") + "n";// + txtView.getText();
             Log.i("NotificationReceiver", temp);
             //txtView.setText(temp);
         }
-    }
-}
+    };
 
+    public boolean checkNotificationEnabled()
+    {
+        if (Settings.Secure.getString(this.getContentResolver(),"enabled_notification_listeners").contains(getApplicationContext().getPackageName()))
+        {
+            IntentFilter filter = new IntentFilter();
+            filter.addAction("android.service.notification.NotificationListenerService");
+            registerReceiver(onReader, filter);
+
+//        Intent intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
+//        startActivity(intent);
+            return true;
+        } else {
+            //service is not enabled try to enabled by calling...
+            getApplicationContext().startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
+        }
+        return false;
+    }
+    //endregion
+
+}
 
