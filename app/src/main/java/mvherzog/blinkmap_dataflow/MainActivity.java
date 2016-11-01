@@ -16,7 +16,12 @@ import android.content.IntentFilter;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
+import android.os.Parcel;
+import android.os.ParcelUuid;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -35,8 +40,10 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.LocationListener;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -56,7 +63,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private LocationRequest request;
     private BluetoothAdapter adapter;
     public BluetoothDevice adafruit;
-    public static String EXTRA_ADDRESS;
+    private String btAddress = "C5:12:82:4F:6F:CD";
     public BluetoothGatt gatt;
     public double currentLat, currentLon;
 
@@ -66,7 +73,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public static final UUID ADA_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private OutputStream output;
     private InputStream input;
-    private ConnectionThread ct;
+    private byte[] buffer;
+    private boolean isGattConnected = false;
 
     public NotificationReader nReader;
 
@@ -79,25 +87,29 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         LocalBroadcastManager.getInstance(this).registerReceiver(onNotice, new IntentFilter("Msg"));
 
         //Might only work if native Notification
-        if(checkNotificationEnabled()){
-            startActivity(new Intent(this, NotificationReader.class));
+        if (checkNotificationEnabled())
+        {
+            registerReceiver(onReader, new IntentFilter());
+//            startActivity(new Intent(this, NotificationReader.class));
+        }
+        else
+        {
+            //service is not enabled try to enabled by calling...
+            getApplicationContext().startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
         }
 
-        //Set up Google API client
-        client = new GoogleApiClient.Builder(this)
-                .addConnectionCallbacks(this)
-                .addOnConnectionFailedListener(this)
-                .addApi(LocationServices.API)
-                .addApi(AppIndex.API).build();
-
-        //Set up location requests
-        request = LocationRequest.create()
-                .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
-                .setInterval(1000)
-                .setFastestInterval(100);
-
-        //Set up Google Maps listener HERE
-        //TODO: Use 4 pinned tabs in Chrome to launch Google Maps app from BlinkMap
+//        //Set up Google API client
+//        client = new GoogleApiClient.Builder(this)
+//                .addConnectionCallbacks(this)
+//                .addOnConnectionFailedListener(this)
+//                .addApi(LocationServices.API)
+//                .addApi(AppIndex.API).build();
+//
+//        //Set up location requests
+//        request = LocationRequest.create()
+//                .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+//                .setInterval(1000)
+//                .setFastestInterval(100);
 
         //Listen for Bluetooth devices
         initializeAdapter();
@@ -111,32 +123,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             @Override
             public void onClick(View v)
             {
-                //I want to connect and pair the Adafruit here
-                //If pairing is unsuccessful, throw an error
-                if (!adapterInitialized())
-                {
-                    toast("Please make sure Bluetooth is turned on.");
-                    initializeAdapter();
-                }
-                else
-                {
-//                  IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-//                  registerReceiver(receiver, filter);
-                    if (!isBLEPaired(ADAFRUIT_NAME))
-                    {
-                        toast("Could not find Adafruit.");
-                    }
-                    if (isBLEPaired(ADAFRUIT_NAME))
-                    {
-                        Log.d(TAG, "BLE is paired");
-                        //Connect GoogleAPI client and setup GATT
-                        EXTRA_ADDRESS = adafruit.getAddress();
-                        setupGatt();
-                        client.connect();
-                        //Possibly open Google Maps app here
-                        //Can I have the user enter their destination and grab that info/generated JSON?
-                    }
-                }
+                setUpBtnConnect();
             }
         });
 
@@ -145,7 +132,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             @Override
             public void onClick(View v)
             {
-//                disconnect(); //close connection
+                if (isGattConnected)
+                {
+                    gatt.disconnect();
+                    gatt.close();
+                }
             }
         });
     }
@@ -153,6 +144,43 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private void toast(String s)
     {
         Toast.makeText(getApplicationContext(), s, Toast.LENGTH_LONG).show();
+    }
+
+    private void setUpBtnConnect()
+    {
+        Log.i("Clicked", "btnConnect");
+        //I want to connect and pair the Adafruit here
+        //If pairing is unsuccessful, throw an error
+        if (!adapterInitialized())
+        {
+            Log.i("Adapter", "not initialized");
+            toast("Please make sure Bluetooth is turned on.");
+            initializeAdapter();
+        }
+        else
+        {
+            Log.i("Adapter", "initialized");
+
+            if (!isBLEPaired(ADAFRUIT_NAME))
+            {
+                Log.i("BLE", "is NOT paired");
+                adafruit = adapter.getRemoteDevice(btAddress);
+                if (adafruit != null)
+                {
+                    setupGatt();
+                }
+                else
+                {
+                    toast("Could not find Adafruit.");
+                }
+            }
+            if (isBLEPaired(ADAFRUIT_NAME))
+            {
+                Log.d("BLE", "is paired");
+                setupGatt();
+//                client.connect();
+            }
+        }
     }
 
     //region GATT
@@ -164,6 +192,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         {
             //read the characteristic data
             byte[] data = characteristic.getValue();
+            for (Byte d : data)
+            {
+                Log.i("Byte:", d.toString());
+            }
         }
 
         @Override
@@ -196,32 +228,132 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     //Call this once the Adafruit is paired and connected and we have navigation data.
     //This will send the navigation + location data to adafruit
-    private void sendData()
+    private void connectBTSocket()
     {
-        Log.d(TAG, "sendData()");
         boolean conn = false;
         if (gatt != null)
         {
             adapter.cancelDiscovery();
-//            gatt.connect();
             conn = true;
         }
-        if (conn)
+        if (conn && isGattConnected)
         {
-            //TODO: START HERE
-//            try
-//            {
-//                ct = new ConnectionThread(adafruit, true, adapter, ADA_UUID);
-
+            try
+            {
+                socket = adafruit.createRfcommSocketToServiceRecord(ADA_UUID);
+                Method m = adafruit.getClass().getMethod("createRfcommSocket", int.class);
+                socket = (BluetoothSocket) m.invoke(adafruit, 1);
+                sendData(socket);
 //                socket.connect();
+            }
+            catch (IOException e)
+            {
+                e.printStackTrace();
+            }
+            catch (NoSuchMethodException e)
+            {
+                e.printStackTrace();
+            }
+            catch (IllegalAccessException e)
+            {
+                e.printStackTrace();
+            }
+            catch (InvocationTargetException e)
+            {
+                e.printStackTrace();
+            }
         }
-//            catch (IOException e)
-//            {
-//                e.printStackTrace();
-//            }
     }
 
-    //Does this force Bluetooth pairing? If not, what exactly is it doing?
+    private void sendData(BluetoothSocket socket)
+    {
+        int bytes;
+        int length = 10;
+        try
+        {
+            input = socket.getInputStream();
+            output = socket.getOutputStream();
+            int sType = socket.getConnectionType();
+            Log.i("sType", String.format("%d", sType));
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
+        final DataThread thread = new DataThread(socket);
+        thread.start();
+
+        AsyncTask<Handler, DataThread, Void> task = new AsyncTask<Handler, DataThread, Void>()
+        {
+            @Override
+            protected Void doInBackground(Handler... params)
+            {
+                try
+                {
+                    Thread.sleep(1000);
+                }
+                catch (InterruptedException e)
+                {
+                    e.printStackTrace();
+                }
+                return null;
+            }
+        };
+        Handler handler = thread.getThreadHandler();
+        task.execute(handler);
+//        thread.run();
+        Log.i("SEND_CODE", String.format("%d", DataThread.SEND_CODE));
+        Message msg;
+        while (handler != null)
+        {
+            msg = handler.obtainMessage(DataThread.SEND_CODE);
+            msg.setTarget(handler);
+            msg.what = DataThread.SEND_CODE;
+            Log.i("HND.ObtainMessage", String.format("%s", msg));
+            Log.i("1|2|D|T|C|S", String.format("%d | %d | %s | %s | %s | %s", msg.arg1, msg.arg2, msg.getData(), msg.getTarget(), msg.getCallback(), msg.toString()));
+            msg.sendToTarget();
+        }
+//        Message msg = hnd.obtainMessage(DataThread.SEND_CODE, 0, 0, new Object());
+//        for (int i = 0; i < 100; i++)
+//        {
+//            msg.getData().describeContents();
+//        }
+
+//        try
+//        {
+//            input = socket.getInputStream();
+//            int available = 0;
+//
+//            while (true)
+//            {
+//                available = input.available();
+//                if (available > 0) { break; }
+//                Thread.sleep(1);
+//                // here you can optionally check elapsed time, and time out
+//            }
+//
+//            Log.i( "1) I/O", "available bits: " + available );
+//            bytes = input.read(buffer, 0, length);
+//            Log.i( "2) I/O", "available bits: " + input.available() );
+//            handler.obtainMessage(MainActivity.MESSAGE_READ, bytes, -1, buffer).sendToTarget();
+//
+//            output = socket.getOutputStream();
+////            output.write("TO".toString().getBytes(), 0, 10);//"TO".toString().getBytes());
+//            Log.i("INPUT", input.toString());
+//            Log.i("OUTPUT", output.toString());
+////            output.flush();
+//        }
+//        catch (IOException e)
+//        {
+//            e.printStackTrace();
+//        }
+//        catch (InterruptedException e)
+//        {
+//            e.printStackTrace();
+//        }
+
+    }
+
     private void setupGatt()
     {
         gatt = adafruit.connectGatt(MainActivity.this, false, callback);
@@ -246,9 +378,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                     }
                 }
             }
-            //DO I NEED THIS?
-//          gatt.disconnect();
-//          gatt.close();
+            isGattConnected = true;
+            Log.i("Gatt", "set up");
+            connectBTSocket();
+
         }
     }
     //endregion
@@ -275,18 +408,18 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     protected void onPause()
     {
         super.onPause();
-        if (client.isConnected())
-        {
-            LocationServices.FusedLocationApi.removeLocationUpdates(client, this);
-            client.disconnect();
-        }
+//        if (client.isConnected())
+//        {
+//            LocationServices.FusedLocationApi.removeLocationUpdates(client, this);
+//            client.disconnect();
+//        }
     }
 
     @Override
     protected void onResume()
     {
         super.onResume();
-        client.connect();
+//        client.connect();
     }
 
     @Override
@@ -299,7 +432,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
                 ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)
         {
-            LocationServices.FusedLocationApi.requestLocationUpdates(client, request, this);
+//            LocationServices.FusedLocationApi.requestLocationUpdates(client, request, this);
         }
         else
         {
@@ -356,8 +489,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     @Override
     public void onStart()
     {
+//        client.connect();
         super.onStart();
-        client.connect();
     }
 
     @Override
@@ -365,7 +498,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     {
         Log.d(TAG, "onStop()");
 //        unregisterReceiver(receiver);
-        client.disconnect();
+//        client.disconnect();
         super.onStop();
     }
 
@@ -374,8 +507,26 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     {
         Log.d(TAG, "onDestroy()");
         unregisterReceiver(onReader);
-//        gatt.disconnect();
-//        gatt.close();
+        //disconnect bluetooth here
+
+        if (socket != null)
+        {
+            try
+            {
+                socket.close();
+            }
+            catch (IOException e)
+            {
+                e.printStackTrace();
+            }
+        }
+
+        if (isGattConnected)
+        {
+            gatt.disconnect();
+            gatt.close();
+        }
+
         super.onDestroy();
     }
     //endregion
@@ -397,7 +548,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 if (device.getName().equals(name))
                 {
                     adafruit = device;
-//                    adapter.cancelDiscovery();
                     return true;
                 }
             }
@@ -405,22 +555,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         return false;
     }
 
-    //Pretty sure this isn't needed anymore (as of 10/23)
-    public void setLEDConnection(BluetoothDevice device)
-    {
-        Intent ledIntent = new Intent(MainActivity.this, LED.class);
-        //First argument is probably wrong
-        ledIntent.putExtra(EXTRA_ADDRESS, device.getAddress());
-        startActivity(ledIntent);
-    }
-
     //Pretty sure this isn't needed anymore if using GATT Services (as of 10/23)
     private void pairDevice(BluetoothDevice device)
     {
         try
         {
-            Method method = device.getClass().getMethod("createBond", (Class[]) null);
-            method.invoke(device, (Object[]) null);
             adafruit = device;
         }
         catch (Exception e)
@@ -435,18 +574,21 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private void initializeAdapter()
     {
         adapter = BluetoothAdapter.getDefaultAdapter();
-
         adapter.startDiscovery();
+
         if (adapter != null)
         {
             if (!adapter.isEnabled())
             {
+
                 Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
                 startActivityForResult(enableBtIntent, 1);
+                Log.i("Adapter", "enabled");
             }
         }
         else
         {
+            Log.i("Adapter", "Bluetooth unavailable");
             toast("Bluetooth Device unavailable");
         }
     }
@@ -457,54 +599,54 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         return (!(adapter == null)) && adapter.isEnabled();
     }
 
-//    private final BroadcastReceiver receiver = new BroadcastReceiver()
-//    {
-//        public void onReceive(Context context, Intent intent)
-//        {
-//            String action = intent.getAction();
-//
-//            if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action))
-//            {
-//                final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
-//
-//                if (state == BluetoothAdapter.STATE_ON)
-//                {
-//                    Log.d(TAG, "Enabled");
-//                }
-//            }
-//            else if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action))
-//            {
-//                devices = new ArrayList<>();
-//            }
-//            else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action))
-//            {
-//                Intent newIntent = new Intent(MainActivity.this, MainActivity.class);
-//                newIntent.putParcelableArrayListExtra("device.list", devices);
-//                startActivity(newIntent);
-//            }
-//            else if (BluetoothDevice.ACTION_FOUND.equals(action))
-//            {
-//                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-//                if (device != null)
-//                {
-//                    if (device.getType() == BluetoothDevice.DEVICE_TYPE_LE)
-//                    {
-//                        Log.d(TAG, "Found " + device.getName());
-//                        devices.add(device);
-//                    }
-//                }
-//
-//                for (BluetoothDevice foundDevice : devices)
-//                {
-//                    if (foundDevice.getName().equals(ADAFRUIT_NAME))
-//                    {
-//                        adapter.cancelDiscovery();
-//                        pairDevice(foundDevice);
-//                    }
-//                }
-//            }
-//        }
-//    };
+    private final BroadcastReceiver receiver = new BroadcastReceiver()
+    {
+        public void onReceive(Context context, Intent intent)
+        {
+            String action = intent.getAction();
+
+            if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action))
+            {
+                final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
+
+                if (state == BluetoothAdapter.STATE_ON)
+                {
+                    Log.d(TAG, "Enabled");
+                }
+            }
+            else if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action))
+            {
+                devices = new ArrayList<>();
+            }
+            else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action))
+            {
+                Intent newIntent = new Intent(MainActivity.this, MainActivity.class);
+                newIntent.putParcelableArrayListExtra("device.list", devices);
+                startActivity(newIntent);
+            }
+            else if (BluetoothDevice.ACTION_FOUND.equals(action))
+            {
+                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                if (device != null)
+                {
+                    if (device.getType() == BluetoothDevice.DEVICE_TYPE_LE)
+                    {
+                        Log.d(TAG, "Found " + device.getName());
+                        devices.add(device);
+                    }
+                }
+
+                for (BluetoothDevice foundDevice : devices)
+                {
+                    if (foundDevice.getName().equals(ADAFRUIT_NAME))
+                    {
+                        adapter.cancelDiscovery();
+                        pairDevice(foundDevice);
+                    }
+                }
+            }
+        }
+    };
     //endregion
 
     //region public Notification
@@ -534,6 +676,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         @Override
         public void onReceive(Context context, Intent intent)
         {
+            Log.d("RECEIVER", "Received!");
             String temp = intent.getStringExtra("notification_event") + "n";// + txtView.getText();
             Log.i("NotificationReceiver", temp);
             //txtView.setText(temp);
@@ -542,20 +685,17 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     public boolean checkNotificationEnabled()
     {
-        if (Settings.Secure.getString(this.getContentResolver(),"enabled_notification_listeners").contains(getApplicationContext().getPackageName()))
+        if (Settings.Secure.getString(this.getContentResolver(), "enabled_notification_listeners").contains(getApplicationContext().getPackageName()))
         {
-            IntentFilter filter = new IntentFilter();
-            filter.addAction("android.service.notification.NotificationListenerService");
-            registerReceiver(onReader, filter);
-
+            return true;
 //        Intent intent = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
 //        startActivity(intent);
-            return true;
-        } else {
-            //service is not enabled try to enabled by calling...
-            getApplicationContext().startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
         }
-        return false;
+        else
+        {
+            toast("Please enable notification access on the next screen");
+            return false;
+        }
     }
     //endregion
 
