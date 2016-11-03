@@ -1,5 +1,6 @@
 package mvherzog.blinkmap_dataflow;
 
+import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.database.CursorJoiner;
 import android.icu.util.Output;
@@ -24,13 +25,33 @@ public class DataThread extends Thread
     public static final int QUIT_CODE = 2;
     private final Looper looper;
     private BluetoothSocket socket;
+    private BluetoothServerSocket sSocket;
     private InputStream input;
     private OutputStream output;
 
-    public DataThread(BluetoothSocket socket)
+    public DataThread(BluetoothServerSocket msocket)//BluetoothSocket socket)
     {
         Log.i(TAG, "new DataThread");
-        this.socket = socket;
+        this.sSocket = msocket;
+        try
+        {
+            Log.i(TAG, "connection socket...");
+            socket = sSocket.accept();
+//            input = socket.getInputStream();
+//            output = socket.getOutputStream();
+//            Thread.sleep(1000);
+            socket.connect();
+            if(socket.isConnected())
+            Log.i(TAG, "socket connected!");
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
+//        catch (InterruptedException e)
+//        {
+//            e.printStackTrace();
+//        }
         looper = Looper.getMainLooper();
     }
 
@@ -44,7 +65,6 @@ public class DataThread extends Thread
         Log.i("RUN", "making new DataHandler");
         handler = new Handler()
         {
-
             @Override
             public void handleMessage(Message msg)
             {
@@ -54,7 +74,9 @@ public class DataThread extends Thread
 //            try
 //            {
                     Log.i("Message=", String.format("%d", SEND_CODE));
-//                output.write(SEND_CODE);
+//                Log.i("HND.ObtainMessage", String.format("%s", msg));
+                    Log.i("1|2|D|T|C|S", String.format("%d | %d | %s | %s | %s | %s", msg.arg1, msg.arg2, msg.getData(), msg.getTarget(), msg.getCallback(), msg.toString()));
+                    msg.sendToTarget();
 //            }
 //            catch (IOException e)
 //            {
