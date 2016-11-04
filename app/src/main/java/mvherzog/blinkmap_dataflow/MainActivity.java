@@ -42,6 +42,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.Buffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -58,12 +59,20 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private static final int STATE_CONNECTING = 1;
     private static final int STATE_CONNECTED = 2;
 
+    //UUIDs
+    public static final UUID TRUE_UUID = UUID.fromString("00002a00-0000-1000-8000-00805f9b34fb");
+    public static final UUID ADA_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    public static final UUID UART_UUID = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+
+    //Write to BLE
+    public BluetoothGattCharacteristic writeCharacteristicToBLE;
+    public String characteristicToWrite = "HELLO BLE from Characteristic";
+
     public final static String ACTION_GATT_CONNECTED = "mvherzog.blinkmap_dataflow.ACTION_GATT_CONNECTED";
     public final static String ACTION_GATT_DISCONNECTED = "mvherzog.blinkmap_dataflow.ACTION_GATT_DISCONNECTED";
     public final static String ACTION_GATT_SERVICES_DISCOVERED = "mvherzog.blinkmap_dataflow.ACTION_GATT_SERVICES_DISCOVERED";
     public final static String ACTION_DATA_AVAILABLE = "mvherzog.blinkmap_dataflow.ACTION_DATA_AVAILABLE";
     public final static String EXTRA_DATA = "mvherzog.blinkmap_dataflow.EXTRA_DATA";
-    public final static UUID TRUE_UUID = UUID.fromString("00002a00-0000-1000-8000-00805f9b34fb");
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
     private final int REQUEST_PERMISSION_FINE_LOCATION = 1;
     private final String ADAFRUIT_NAME = "Adafruit Bluefruit LE";
@@ -79,7 +88,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private ArrayList<BluetoothDevice> devices = new ArrayList<>();
     BluetoothSocket socket = null;
     BluetoothServerSocket sSocket = null;
-    public static final UUID ADA_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private OutputStream output;
     private InputStream input;
     private byte[] buffer;
@@ -233,10 +241,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
         {
             Log.i("onCharacteristicWrite", "Wrote!");
-            if (characteristic.getValue() != null)
-            {
-                Log.i("onCharacteristicRead", String.format("Characteristic: %s, Status: %d:, Service UUID: %s", String.valueOf(characteristic.getValue()), status, characteristic.getService().getUuid()));
-            }
+            Log.i("onCharacteristicWrite", String.format("Characteristic: %s, Status: %d:, Service UUID: %s", Arrays.toString(characteristic.getValue()), status, characteristic.getService().getUuid()));
         }
 
         public void setCharacteristicIndication(BluetoothGattCharacteristic characteristic, boolean enabled)
@@ -288,23 +293,45 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         public void onServicesDiscovered(final BluetoothGatt gatt, final int status)
         {
             Log.i("CALLBACK", "onServicesDiscovered");
+//            BluetoothGattCharacteristic writeCharacteristicToBLE;
+//            String characteristicToWrite = "HELLO BLE from Characteristic";
+            byte[] strBytes;
+            byte[] bytes;
+
             List<BluetoothGattService> services = gatt.getServices();
             for (BluetoothGattService service : services)
             {
                 Log.i("onServicesDiscovered", String.format("Service UUID: %s", service.getUuid().toString()));
-                if (service.getUuid() == TRUE_UUID)
-                {
-                    Log.i("service", "true: " + TRUE_UUID);
-                }
+
                 List<BluetoothGattCharacteristic> characteristics = service.getCharacteristics();
                 for (BluetoothGattCharacteristic characteristic : characteristics)
                 {
+                    gatt.writeCharacteristic(characteristic);
+                    if (((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) |
+                            (characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) > 0)
+                    {
+//                        if (characteristic.getService().getUuid().equals(UART_UUID))
+//                        {
+                        Log.i("UART", "UART CHARACTERISTIC DISCOVERED");
+                        writeCharacteristicToBLE = characteristic;
+                        strBytes = characteristicToWrite.getBytes();
+                        Log.i("writing", "from stack overflow");
+                        writeCharacteristicToBLE.setValue(strBytes);
+                        gatt.writeCharacteristic(writeCharacteristicToBLE);
+//                        }
+                    }
                     for (BluetoothGattDescriptor descriptor : characteristic.getDescriptors())
                     {
                         //find descriptor UUID that matches Client Characteristic Configuration (0x2902)
                         // and then call setValue on that descriptor
-                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+//                        if (descriptor.getCharacteristic().getService().getUuid().equals(UART_UUID))
+//                        {
+                        Log.i("UART Descriptor", "Sending 'HELLO BLE?' in bytes");
+                        descriptor.setValue("HELLO BLE?".getBytes());
                         gatt.writeDescriptor(descriptor);
+//                        }
+//                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+//                        gatt.writeDescriptor(descriptor);
 //                        if (descriptor.getValue() != null)
 //                        {
 //                            gatt.beginReliableWrite();
@@ -336,7 +363,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         {
             isGattConnected = true;
             Log.i("connectGATT", "GATT connected");
-            
+
         }
 
 //            if (service != null)
