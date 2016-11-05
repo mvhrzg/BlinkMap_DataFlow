@@ -40,7 +40,6 @@ import com.google.android.gms.location.LocationListener;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.Buffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -49,7 +48,8 @@ import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks,
                                                                GoogleApiClient.OnConnectionFailedListener,
-                                                               LocationListener
+                                                               Uart.Callback
+//                                                               LocationListener
 {
     Button btnConnect, btnDisconnect;
     public static final String TAG = MainActivity.class.getSimpleName();
@@ -59,6 +59,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private static final int STATE_CONNECTING = 1;
     private static final int STATE_CONNECTED = 2;
 
+    //UART
+    private Uart uart;
+
     //UUIDs
     public static final UUID TRUE_UUID = UUID.fromString("00002a00-0000-1000-8000-00805f9b34fb");
     public static final UUID ADA_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
@@ -66,7 +69,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     //Write to BLE
     public BluetoothGattCharacteristic writeCharacteristicToBLE;
-    public String characteristicToWrite = "HELLO BLE from Characteristic";
+    public String dataToWrite = "HELLO BLE from Characteristic";
 
     public final static String ACTION_GATT_CONNECTED = "mvherzog.blinkmap_dataflow.ACTION_GATT_CONNECTED";
     public final static String ACTION_GATT_DISCONNECTED = "mvherzog.blinkmap_dataflow.ACTION_GATT_DISCONNECTED";
@@ -86,13 +89,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     //Are these needed?
     private ArrayList<BluetoothDevice> devices = new ArrayList<>();
-    BluetoothSocket socket = null;
-    BluetoothServerSocket sSocket = null;
-    private OutputStream output;
-    private InputStream input;
-    private byte[] buffer;
-    private Handler handler = null;
-    private Message msg;
     private boolean isGattConnected = false;
 
     public NotificationReader nReader;
@@ -136,13 +132,16 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //Set up buttons
         btnConnect = (Button) findViewById(R.id.btnConnect);
         btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
-
+        uart = new Uart(getApplicationContext());
         btnConnect.setOnClickListener(new View.OnClickListener()
         {
             @Override
             public void onClick(View v)
             {
-                setUpBtnConnect();
+                setUpBtnConnect(uart);
+                writeLine("Calling uart.connectFirstAvailable()");
+//                uart.getGatt().connect();
+                writeLine("After uart.connectFirstAvailable()");
             }
         });
 
@@ -158,12 +157,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 //                    handler.sendMessage(msg);
 //
 //                }
-                if (isGattConnected)
-                {
-                    gatt.disconnect();
-                    gatt.close();
-                    Log.i("btnDisconnect", "disconnected GATT");
-                }
+                onDisconnected(uart);
             }
         });
     }
@@ -173,7 +167,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         Toast.makeText(getApplicationContext(), s, Toast.LENGTH_LONG).show();
     }
 
-    private void setUpBtnConnect()
+    private void setUpBtnConnect(Uart uart)
     {
         Log.i("Clicked", "btnConnect");
         //I want to connect and pair the Adafruit here
@@ -187,297 +181,312 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         else
         {
             Log.i("Adapter", "initialized");
+            if (!uart.isConnected())
+            {
+                Log.i("setUpBtnConnect", "UART not connected");
+                uart.connectFirstAvailable();
+            }
+            else
+            {
+                isGattConnected = true;
+                Log.i("setUpBtnConnect", "UART connected");
+            }
+//            if (!isBLEPaired(ADAFRUIT_NAME))
+//            {
+//                Log.i("BLE", "is NOT paired");
+//                if (adafruit == null)
+//                {
+//                    adafruit = adapter.getRemoteDevice(btAddress);
+//                }
+//                if (adafruit != null)
+//                {
+//                    Log.i("setUpBtnConnect", "Adafruit != null");
+////                    connectGATT();
+//                }
+//                else
+//                {
+//                    toast("Could not find Adafruit.");
+//                }
+//            }
+//            if (isBLEPaired(ADAFRUIT_NAME))
+//            {
+//                Log.d("BLE", "is paired");
+////                connectGATT();
+////                client.connect();
+//            }
+        }
+        if(isGattConnected && uart.connectFirst){
+            sendData(uart);
+        }
+    }
 
-            if (!isBLEPaired(ADAFRUIT_NAME))
-            {
-                Log.i("BLE", "is NOT paired");
-                if (adafruit == null)
-                {
-                    adafruit = adapter.getRemoteDevice(btAddress);
-                }
-                if (adafruit != null)
-                {
-                    connectGATT();
-                }
-                else
-                {
-                    toast("Could not find Adafruit.");
-                }
-            }
-            if (isBLEPaired(ADAFRUIT_NAME))
-            {
-                Log.d("BLE", "is paired");
-                connectGATT();
-//                client.connect();
-            }
+    public void sendData(Uart uart)
+    {
+        while(uart.isConnected())
+        {
+            writeLine("While UART.isConnected");
+            writeCharacteristicToBLE.setValue("Hello from BlinkMap");
+            uart.onCharacteristicWrite(uart.getGatt(), writeCharacteristicToBLE, uart.getGatt().getConnectionState(adafruit));
+            writeLine("After onCharWrite('Hello from BlinkMap')");
         }
     }
 
     //region GATT
-    private final BluetoothGattCallback callback = new BluetoothGattCallback()
+
+    @Override
+    public void onConnected(Uart uart)
     {
+        // Called when UART device is connected and ready to send/receive data.
+        writeLine("Connected!");
+        sendData(uart);
+        // Enable the send button
+//        runOnUiThread(new Runnable() {
+//            @Override
+//            public void run() {
+//                send = (Button)findViewById(R.id.send);
+//                send.setClickable(true);
+//                send.setEnabled(true);
+//            }
+//        });
+    }
 
-        @Override
-        public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic)
+    @Override
+    public void onConnectFailed(Uart uart)
+    {
+        // Called when some error occured which prevented UART connection from completing.
+        writeLine("Error connecting to device! Please press the Connect button again.");
+//        runOnUiThread(new Runnable() {
+//            @Override
+//            public void run() {
+//                send = (Button)findViewById(R.id.send);
+//                send.setClickable(false);
+//                send.setEnabled(false);
+//            }
+//        });
+    }
+
+    @Override
+    public void onDisconnected(Uart uart)
+    {
+        // Called when the UART device disconnected.
+        writeLine("Disconnected!");
+        uart.disconnect();
+        // Disable the send button.
+//        runOnUiThread(new Runnable() {
+//            @Override
+//            public void run() {
+//                send = (Button)findViewById(R.id.send);
+//                send.setClickable(false);
+//                send.setEnabled(false);
+//            }
+//        });
+    }
+
+    @Override
+    public void onReceive(Uart uart, BluetoothGattCharacteristic rx)
+    {
+        // Called when data is received by the UART.
+        writeLine("Received: " + rx.getStringValue(0));
+    }
+
+    @Override
+    public void onDeviceFound(BluetoothDevice device)
+    {
+        // Called when a UART device is discovered (after calling startScan).
+        writeLine("Found device : " + device.getAddress());
+        writeLine("Waiting for a connection ...");
+    }
+
+    @Override
+    public void onDeviceInfoAvailable()
+    {
+        writeLine(uart.getDeviceInfo());
+    }
+
+    private void writeLine(final CharSequence text)
+    {
+        runOnUiThread(new Runnable()
         {
-            Log.i("onCharacteristicChanged", "Changed!");
-            //read the characteristic data
-            byte[] data = characteristic.getValue();
-            for (Byte d : data)
+            @Override
+            public void run()
             {
-                Log.i("Byte:", d.toString());
+                Log.i("WriteLine", String.valueOf(text));
+//                messages.append(text);
+//                messages.append("\n");
             }
-        }
+        });
+    }
 
-        @Override
-        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
-        {
-            Log.i("onCharacteristicRead", "Read!");
-            Log.i("onCharacteristicRead", String.format("Characteristic: %s, Status: %d:", String.valueOf(characteristic.getUuid()), status));
-            setCharacteristicIndication(characteristic, true);
-        }
-
-        @Override
-        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
-        {
-            Log.i("onCharacteristicWrite", "Wrote!");
-            Log.i("onCharacteristicWrite", String.format("Characteristic: %s, Status: %d:, Service UUID: %s", Arrays.toString(characteristic.getValue()), status, characteristic.getService().getUuid()));
-        }
-
-        public void setCharacteristicIndication(BluetoothGattCharacteristic characteristic, boolean enabled)
-        {
-
-            gatt.setCharacteristicNotification(characteristic, enabled);
-
-            List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors();//TRUE_UUID
-            for (BluetoothGattDescriptor descriptor : descriptors)
-            {
-                if (descriptor != null)
-                {
-                    descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
-                    Log.v(TAG, "Enabling indications for " + characteristic.getUuid());
-                    Log.d(TAG, "gatt.writeDescriptor(" + characteristic.getDescriptor(descriptor.getUuid()) + ", value=0x02-00?)");
-                    gatt.writeDescriptor(descriptor);
-                }
-                else
-                {
-                    Log.v(TAG, "Could not enable indications for " + characteristic.getUuid());
-                }
-            }
-        }
-
-        @Override
-        public void onConnectionStateChange(final BluetoothGatt gatt, final int status, final int newState)
-        {
-            Log.i("CALLBACK", "connectionStateChanged");
-            String intentAction;
-            if (newState == BluetoothProfile.STATE_CONNECTED)
-            {
-                intentAction = ACTION_GATT_CONNECTED;
-                connectionState = STATE_CONNECTED;
-                broadcastUpdate(intentAction);
-                Log.i(TAG, "Connected to GATT server.");
-                // Attempts to discover services after successful connection.
-                Log.i(TAG, "Attempting to start service discovery:" + gatt.discoverServices());
-            }
-            else if (newState == BluetoothProfile.STATE_DISCONNECTED)
-            {
-                intentAction = ACTION_GATT_DISCONNECTED;
-                connectionState = STATE_DISCONNECTED;
-                Log.i(TAG, "Disconnected from GATT server.");
-                broadcastUpdate(intentAction);
-            }
-        }
-
-        @Override
-        public void onServicesDiscovered(final BluetoothGatt gatt, final int status)
-        {
-            Log.i("CALLBACK", "onServicesDiscovered");
-//            BluetoothGattCharacteristic writeCharacteristicToBLE;
-//            String characteristicToWrite = "HELLO BLE from Characteristic";
-            byte[] strBytes;
-            byte[] bytes;
-
-            List<BluetoothGattService> services = gatt.getServices();
-            for (BluetoothGattService service : services)
-            {
-                Log.i("onServicesDiscovered", String.format("Service UUID: %s", service.getUuid().toString()));
-
-                List<BluetoothGattCharacteristic> characteristics = service.getCharacteristics();
-                for (BluetoothGattCharacteristic characteristic : characteristics)
-                {
-                    gatt.writeCharacteristic(characteristic);
-                    if (((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) |
-                            (characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) > 0)
-                    {
+//    private final BluetoothGattCallback callback = new BluetoothGattCallback()
+//    {
+//
+//        @Override
+//        public void onCharacteristicChanged(BluetoothGatt gatt, final BluetoothGattCharacteristic characteristic)
+//        {
+//            Log.i("onCharacteristicChanged", "Changed!");
+//            //read the characteristic data
+//            byte[] data = characteristic.getValue();
+//            for (Byte d : data)
+//            {
+//                Log.i("Byte:", d.toString());
+//            }
+//        }
+//
+//        @Override
+//        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
+//        {
+//            Log.i("onCharacteristicRead", "Read!");
+//            Log.i("onCharacteristicRead", String.format("Characteristic UUID: %s, Status: %d:", String.valueOf(characteristic.getUuid()), status));
+//            setCharacteristicIndication(characteristic, true);
+//        }
+//
+//        @Override
+//        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
+//        {
+//            Log.i("onCharacteristicWrite", "Wrote!");
+//            Log.i("onCharacteristicWrite", String.format("Characteristic: %s, Status: %d:, Service UUID: %s, WriteType: %d", Arrays.toString(characteristic.getValue()), status, characteristic.getService().getUuid(), characteristic.getWriteType()));
+//            for(int i = 0; i < characteristic.getValue().length; i++){
+//                for(char c : characteristic.getStringValue(i).toCharArray())
+//                {
+//                    Log.i("char.getValue(i)", String.format("i: %d, c: %s", i, c));
+//                }
+//
+//            }
+//        }
+//
+//        void setCharacteristicIndication(BluetoothGattCharacteristic characteristic, boolean enabled)
+//        {
+//            Log.i("setCharacIndication", "called");
+////            gatt.setCharacteristicNotification(characteristic, enabled);
+////
+////            List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors()
+////            for (BluetoothGattDescriptor descriptor : descriptors)
+////            {
+//
+////                descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+////                gatt.writeDescriptor(descriptor);
+////                if (descriptor != null)
+////                {
+////                    descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+////                    Log.v(TAG, "Enabling indications for " + characteristic.getUuid());
+////                    Log.d(TAG, "gatt.writeDescriptor(" + characteristic.getDescriptor(descriptor.getUuid()) + ", value=0x02-00?)");
+////                    gatt.writeDescriptor(descriptor);
+////                }
+////                else
+////                {
+////                    Log.v(TAG, "Could not enable indications for " + characteristic.getUuid());
+////                }
+////            }
+//        }
+//
+//        @Override
+//        public void onConnectionStateChange(final BluetoothGatt gatt, final int status, final int newState)
+//        {
+//            Log.i("CALLBACK", "connectionStateChanged");
+//            String intentAction;
+//            if (newState == BluetoothProfile.STATE_CONNECTED)
+//            {
+//                intentAction = ACTION_GATT_CONNECTED;
+//                connectionState = STATE_CONNECTED;
+//                broadcastUpdate(intentAction);
+//                Log.i(TAG, "Connected to GATT server.");
+//                // Attempts to discover services after successful connection.
+//                Log.i(TAG, "Attempting to start service discovery:" + gatt.discoverServices());
+//            }
+//            else if (newState == BluetoothProfile.STATE_DISCONNECTED)
+//            {
+//                intentAction = ACTION_GATT_DISCONNECTED;
+//                connectionState = STATE_DISCONNECTED;
+//                Log.i(TAG, "Disconnected from GATT server.");
+//                broadcastUpdate(intentAction);
+//            }
+//        }
+//
+//        @Override
+//        public void onServicesDiscovered(final BluetoothGatt gatt, final int status)
+//        {
+//            Log.i("CALLBACK", "onServicesDiscovered");
+////            BluetoothGattCharacteristic writeCharacteristicToBLE;
+////            String dataToWrite = "HELLO BLE from Characteristic";
+////            byte[] strBytes;
+////            byte[] bytes;
+//
+//            List<BluetoothGattService> services = gatt.getServices();
+//            for (BluetoothGattService service : services)
+//            {
+//                Log.i("onServicesDiscovered", String.format("Service UUID: %s", service.getUuid().toString()));
+//
+//                List<BluetoothGattCharacteristic> characteristics = service.getCharacteristics();
+//                for (BluetoothGattCharacteristic characteristic : characteristics)
+//                {
+//                    Log.i("onServicesDiscovered, ", String.format("Characteristic UUID: %s", characteristic.getUuid().toString()));
+////                    gatt.writeCharacteristic(characteristic);
+//                    if (((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) |
+//                            (characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) > 0)
+//                    {
 //                        if (characteristic.getService().getUuid().equals(UART_UUID))
 //                        {
-                        Log.i("UART", "UART CHARACTERISTIC DISCOVERED");
-                        writeCharacteristicToBLE = characteristic;
-                        strBytes = characteristicToWrite.getBytes();
-                        Log.i("writing", "from stack overflow");
-                        writeCharacteristicToBLE.setValue(strBytes);
-                        gatt.writeCharacteristic(writeCharacteristicToBLE);
+//                            characteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+//                            Log.i("UART", "UART CHARACTERISTIC DISCOVERED : Writing Characteristic (from loop) " + dataToWrite);
+//                            writeCharacteristicToBLE = characteristic;
+//                            writeCharacteristicToBLE.setValue(9999, BluetoothGattCharacteristic.FORMAT_SINT32, 0);
+//                            gatt.writeCharacteristic(writeCharacteristicToBLE);
+////                        }
+//                            for (BluetoothGattDescriptor descriptor : characteristic.getDescriptors())
+//                            {
+//                                //find descriptor UUID that matches Client Characteristic Configuration (0x2902)
+//                                // and then call setValue on that descriptor
+//                                descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+//                                gatt.writeDescriptor(descriptor);
+//                            }
 //                        }
-                    }
-                    for (BluetoothGattDescriptor descriptor : characteristic.getDescriptors())
-                    {
-                        //find descriptor UUID that matches Client Characteristic Configuration (0x2902)
-                        // and then call setValue on that descriptor
-//                        if (descriptor.getCharacteristic().getService().getUuid().equals(UART_UUID))
-//                        {
-                        Log.i("UART Descriptor", "Sending 'HELLO BLE?' in bytes");
-                        descriptor.setValue("HELLO BLE?".getBytes());
-                        gatt.writeDescriptor(descriptor);
-//                        }
-//                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
-//                        gatt.writeDescriptor(descriptor);
-//                        if (descriptor.getValue() != null)
-//                        {
-//                            gatt.beginReliableWrite();
-//                            gatt.writeDescriptor(descriptor);
-//                            gatt.writeCharacteristic(descriptor.getCharacteristic());
-//                            onCharacteristicWrite(gatt, descriptor.getCharacteristic(), status);
-//                        }
-                    }
-                }
-            }
-        }
-    };
-
-    private void broadcastUpdate(final String action)
-    {
-        final Intent intent = new Intent(action);
-        sendBroadcast(intent);
-    }
-
-    private void connectGATT()
-    {
-        byte[] data;
-        BluetoothGattCharacteristic c = new BluetoothGattCharacteristic(TRUE_UUID, 1, 1);
-        Log.i("connectGATT", "inside");
-        gatt = adafruit.connectGatt(MainActivity.this, false, callback);
-        gatt.discoverServices();
-        Log.i("connectGATT", "after adafruit.connectGatt");
-        if (gatt.connect())
-        {
-            isGattConnected = true;
-            Log.i("connectGATT", "GATT connected");
-
-        }
-
-//            if (service != null)
-//            {
-//                gatt.beginReliableWrite();
-//                Log.i("BLE", "is paired");
-//                BluetoothGattCharacteristic characteristic = service.getCharacteristic(ADA_UUID);
-//                characteristic.setValue("HELLO");
-//                gatt.writeCharacteristic(characteristic);
-//                Log.i("GATT", characteristic.toString());
+//                    }
+//                }
 //            }
-//            else{
-//                Log.i("GATT SERVICE", "is null");
-//            }
-
-//            List<BluetoothGattService> services = gatt.getServices();
-
-//            connectBTSocket();
-
-    }
-
-    private void sendData(BluetoothServerSocket socket)//BluetoothSocket socket)
-    {
-        int bytes;
-        int length = 10;
-
-        final DataThread thread = new DataThread(socket);
-        thread.start();
-
-        //This needs to be here so that getThreadHandler can wait
-        try
-        {
-            Thread.sleep(1000);
-            handler = thread.getThreadHandler();
-        }
-        catch (InterruptedException e)
-        {
-            e.printStackTrace();
-        }
-
-//        while (handler != null)
-//        {
-//            //Sleep the thread so app doesn't crash
-//            try
-//            {
-//                Thread.sleep(1000);
-//                msg = handler.obtainMessage(DataThread.SEND_CODE);
-//                msg.setTarget(handler);
+//            isGattConnected = true;
+//        }
+//    };
 //
-//            }
-//            catch (InterruptedException e)
-//            {
-//                e.printStackTrace();
-//            }
-//        }
-//        Message msg = hnd.obtainMessage(DataThread.SEND_CODE, 0, 0, new Object());
-//        for (int i = 0; i < 100; i++)
-//        {
-//            msg.getData().describeContents();
-//        }
-
-//        try
-//        {
-//            input = socket.getInputStream();
-//            int available = 0;
+//    private void broadcastUpdate(final String action)
+//    {
+//        final Intent intent = new Intent(action);
+//        sendBroadcast(intent);
+//    }
 //
-//            while (true)
-//            {
-//                available = input.available();
-//                if (available > 0) { break; }
-//                Thread.sleep(1);
-//                // here you can optionally check elapsed time, and time out
-//            }
-//
-//            Log.i( "1) I/O", "available bits: " + available );
-//            bytes = input.read(buffer, 0, length);
-//            Log.i( "2) I/O", "available bits: " + input.available() );
-//            handler.obtainMessage(MainActivity.MESSAGE_READ, bytes, -1, buffer).sendToTarget();
-//
-//            output = socket.getOutputStream();
-////            output.write("TO".toString().getBytes(), 0, 10);//"TO".toString().getBytes());
-//            Log.i("INPUT", input.toString());
-//            Log.i("OUTPUT", output.toString());
-////            output.flush();
-//        }
-//        catch (IOException e)
+//    private void connectGATT()
+//    {
+//        byte[] data = dataToWrite.getBytes();
+//        BluetoothGattCharacteristic c = new BluetoothGattCharacteristic(UART_UUID, 2, 2);
+//        c.setValue(data);
+//        Log.i("connectGATT", "inside");
+//        gatt = adafruit.connectGatt(MainActivity.this, false, callback);
+//        gatt.discoverServices();
+//        Log.i("connectGATT", "after adafruit.connectGatt");
+//        if (isGattConnected)
 //        {
-//            e.printStackTrace();
+//            Log.i("connectGATT", "isGattConnected == true. Writing characteristic" + dataToWrite);
+//            gatt.writeCharacteristic(c);
+//
 //        }
-//        catch (InterruptedException e)
-//        {
-//            e.printStackTrace();
-//        }
-
-    }
-    //endregion
-
-    //region Location Services
-    @Override
-    public void onLocationChanged(Location location)
-    {
-        handleNewLocation(location);
-    }
-
-    private void handleNewLocation(Location location)
-    {
-        currentLat = location.getLatitude();
-        currentLon = location.getLongitude();
-        // TODO: 10/11/2016 Send Lat & Long info to LED, so it can be sent to Adafruit
-        // TODO: Follow tutorial (http://www.instructables.com/id/Android-Bluetooth-Control-LED-Part-2/?ALLSTEPS)
-//        toast("Latitude= " + currentLatitude + "\n" + "Longitude= " + currentLongitude);
-//        Log.i(TAG, "CurrentLat: " + currentLat);
-//        Log.i(TAG, "CurrentLon: " + currentLon);
-    }
+//
+////            if (service != null)
+////            {
+////                gatt.beginReliableWrite();
+////                Log.i("BLE", "is paired");
+////                BluetoothGattCharacteristic characteristic = service.getCharacteristic(ADA_UUID);
+////                characteristic.setValue("HELLO");
+////                gatt.writeCharacteristic(characteristic);
+////                Log.i("GATT", characteristic.toString());
+////            }
+////            else{
+////                Log.i("GATT SERVICE", "is null");
+////            }
+//
+////            List<BluetoothGattService> services = gatt.getServices();
+//
+////            connectBTSocket();
+//
+//    }
 
     @Override
     protected void onPause()
@@ -583,19 +592,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         Log.d(TAG, "onDestroy()");
         unregisterReceiver(onReader);
         //disconnect bluetooth here
-
-        if (socket != null)
-        {
-            try
-            {
-                socket.close();
-            }
-            catch (IOException e)
-            {
-                e.printStackTrace();
-            }
-        }
-
         if (isGattConnected)
         {
             gatt.disconnect();
