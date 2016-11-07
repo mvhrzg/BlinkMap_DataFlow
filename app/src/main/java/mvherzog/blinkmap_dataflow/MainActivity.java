@@ -38,8 +38,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks,
-                                                               GoogleApiClient.OnConnectionFailedListener//,
-//                                                               Uart.Callback
+                                                               GoogleApiClient.OnConnectionFailedListener,
+                                                               Uart.Callback
 //                                                               LocationListener
 {
     Button btnConnect, btnDisconnect;
@@ -125,6 +125,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             //service is not enabled try to enabled by calling...
             getApplicationContext().startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
         }
+        registerReceiver(mGattUpdateReceiver, new IntentFilter());
 
 //        //Set up Google API client
 //        client = new GoogleApiClient.Builder(this)
@@ -145,7 +146,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //Set up buttons
         btnConnect = (Button) findViewById(R.id.btnConnect);
         btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
-//        uart = new Uart(getApplicationContext());
+        uart = new Uart(getApplicationContext());
         btnConnect.setOnClickListener(new View.OnClickListener()
         {
             @Override
@@ -210,7 +211,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 if (adafruit != null)
                 {
                     Log.i("setUpBtnConnect", "Adafruit != null");
-                    connectGATT();
+                    uart.connectFirstAvailable();
+//                    connectGATT(uart);
                 }
                 else
                 {
@@ -229,13 +231,15 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public void sendData(BluetoothGattService uart)
     {
         writeLine("Inside sendData()");
-        if(isGattConnected){
+        if (isGattConnected)
+        {
             writeLine("isGattConnected is true!");
-            chartoWrite = new BluetoothGattCharacteristic(uart.getCharacteristic(RX_UUID).getUuid(), BluetoothGattCharacteristic.PROPERTY_WRITE, BluetoothGattCharacteristic.PERMISSION_WRITE) ;
+            chartoWrite = new BluetoothGattCharacteristic(uart.getCharacteristic(RX_UUID).getUuid(), BluetoothGattCharacteristic.PROPERTY_WRITE, BluetoothGattCharacteristic.PERMISSION_WRITE);
             chartoWrite.setValue(dataToWrite);
             uart.addCharacteristic(chartoWrite);
-            //TODO: Start Here. ALmost there but service is busy!!!
-            if(gatt.writeCharacteristic(chartoWrite)){
+            //TODO: Start Here. Almost there but service is busy!!!
+            if (gatt.writeCharacteristic(chartoWrite))
+            {
                 writeLine("Wrote " + chartoWrite.getStringValue(0));
             }
         }
@@ -250,76 +254,76 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     //region GATT
 
-    //    @Override
-//    public void onConnected(Uart uart)
-//    {
-//        // Called when UART device is connected and ready to send/receive data.
-//        writeLine("Connected!");
-//        uart.send("Connected".getBytes());
-////        sendData(uart);
-//        // Enable the send button
-////        runOnUiThread(new Runnable() {
-////            @Override
-////            public void run() {
-////                send = (Button)findViewById(R.id.send);
-////                send.setClickable(true);
-////                send.setEnabled(true);
-////            }
-////        });
-//    }
-//
-//    @Override
-//    public void onConnectFailed(Uart uart)
-//    {
-//        // Called when some error occured which prevented UART connection from completing.
-//        writeLine("Error connecting to device! Please press the Connect button again.");
-////        runOnUiThread(new Runnable() {
-////            @Override
-////            public void run() {
-////                send = (Button)findViewById(R.id.send);
-////                send.setClickable(false);
-////                send.setEnabled(false);
-////            }
-////        });
-//    }
-//
-//    @Override
-//    public void onDisconnected(Uart uart)
-//    {
-//        // Called when the UART device disconnected.
-//        writeLine("Disconnected!");
-//        uart.disconnect();
-//        // Disable the send button.
-////        runOnUiThread(new Runnable() {
-////            @Override
-////            public void run() {
-////                send = (Button)findViewById(R.id.send);
-////                send.setClickable(false);
-////                send.setEnabled(false);
-////            }
-////        });
-//    }
-//
-//    @Override
-//    public void onReceive(Uart uart, BluetoothGattCharacteristic rx)
-//    {
-//        // Called when data is received by the UART.
-//        writeLine("Received: " + rx.getStringValue(0));
-//    }
-//
-//    @Override
-//    public void onDeviceFound(BluetoothDevice device)
-//    {
-//        // Called when a UART device is discovered (after calling startScan).
-//        writeLine("Found device : " + device.getAddress());
-//        writeLine("Waiting for a connection ...");
-//    }
-//
-//    @Override
-//    public void onDeviceInfoAvailable()
-//    {
-//        writeLine(uart.getDeviceInfo());
-//    }
+        @Override
+    public void onConnected(Uart uart)
+    {
+        // Called when UART device is connected and ready to send/receive data.
+        writeLine("Connected!");
+        uart.send("Connected".getBytes());
+//        sendData(uart);
+        // Enable the send button
+//        runOnUiThread(new Runnable() {
+//            @Override
+//            public void run() {
+//                send = (Button)findViewById(R.id.send);
+//                send.setClickable(true);
+//                send.setEnabled(true);
+//            }
+//        });
+    }
+
+    @Override
+    public void onConnectFailed(Uart uart)
+    {
+        // Called when some error occured which prevented UART connection from completing.
+        writeLine("Error connecting to device! Please press the Connect button again.");
+//        runOnUiThread(new Runnable() {
+//            @Override
+//            public void run() {
+//                send = (Button)findViewById(R.id.send);
+//                send.setClickable(false);
+//                send.setEnabled(false);
+//            }
+//        });
+    }
+
+    @Override
+    public void onDisconnected(Uart uart)
+    {
+        // Called when the UART device disconnected.
+        writeLine("Disconnected!");
+        uart.disconnect();
+        // Disable the send button.
+//        runOnUiThread(new Runnable() {
+//            @Override
+//            public void run() {
+//                send = (Button)findViewById(R.id.send);
+//                send.setClickable(false);
+//                send.setEnabled(false);
+//            }
+//        });
+    }
+
+    @Override
+    public void onReceive(Uart uart, BluetoothGattCharacteristic rx)
+    {
+        // Called when data is received by the UART.
+        writeLine("Received: " + rx.getStringValue(0));
+    }
+
+    @Override
+    public void onDeviceFound(BluetoothDevice device)
+    {
+        // Called when a UART device is discovered (after calling startScan).
+        writeLine("Found device : " + device.getAddress());
+        writeLine("Waiting for a connection ...");
+    }
+
+    @Override
+    public void onDeviceInfoAvailable()
+    {
+        writeLine(uart.getDeviceInfo());
+    }
 //
     private void writeLine(final CharSequence text)
     {
@@ -434,21 +438,20 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             disHWRev = gatt.getService(DIS_UUID).getCharacteristic(DIS_HWREV_UUID);
             disSWRev = gatt.getService(DIS_UUID).getCharacteristic(DIS_SWREV_UUID);
 
-//            // Add device information characteristics to the read queue
-//            // These need to be queued because we have to wait for the response to the first
-//            // read request before a second one can be processed (which makes you wonder why they
-//            // implemented this with async logic to begin with???)
-//            readQueue.offer(disManuf);
-//            readQueue.offer(disModel);
-//            readQueue.offer(disHWRev);
-//            readQueue.offer(disSWRev);
+            // Add device information characteristics to the read queue
+            // These need to be queued because we have to wait for the response to the first
+            // read request before a second one can be processed (which makes you wonder why they
+            // implemented this with async logic to begin with???)
+            readQueue.offer(disManuf);
+            readQueue.offer(disModel);
+            readQueue.offer(disHWRev);
+            readQueue.offer(disSWRev);
 
-            readQueue.offer(tx);
-            readQueue.offer(rx);
-            isGattConnected = true;
+//            readQueue.offer(tx);
+//            readQueue.offer(rx);
 
             // Request a dummy read to get the device information queue going
-            writeLine("Requesting dummy read " + gatt.readCharacteristic(rx));
+            writeLine("Requesting dummy read " + gatt.readCharacteristic(disManuf));
             if (!gatt.setCharacteristicNotification(rx, true))
             {
                 // Stop if the characteristic notification setup failed.
@@ -465,10 +468,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 //                connectFailure();
                 return;
             }
-            desc.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);//ENABLE_NOTIFICATION_VALUE);
+            desc.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
             if (!gatt.writeDescriptor(desc))
             {
-                writeLine(String.format("couldn't write desc (from %s service, %s characteristic). Contents: %s, Value: %s", desc.getCharacteristic().getService(), desc.getCharacteristic().getStringValue(0), desc.describeContents(), new String(desc.getValue())));
+                writeLine(String.format("couldn't write desc (from %s service, %s characteristic). Contents: %s, Value: %s", desc.getCharacteristic().getService().describeContents(), desc.getCharacteristic().getStringValue(0), desc.describeContents(), new String(desc.getValue())));
                 // Stop if the client descriptor could not be written.
 //                connectFailure();
                 return;
@@ -520,18 +523,18 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         sendBroadcast(intent);
     }
 
-    private void connectGATT()
+    private void connectGATT(Uart uart)
     {
 //        byte[] data = dataToWrite.getBytes();
 //        BluetoothGattCharacteristic c = new BluetoothGattCharacteristic(UART_UUID, 2, 2);
 //        c.setValue(data);
         Log.i("connectGATT", "inside");
         //This connects to BLE (blue light)
-        gatt = adafruit.connectGatt(MainActivity.this, false, callback);
+        gatt = adafruit.connectGatt(MainActivity.this, true, callback);
         //This sets off discover services and writes characteristics and descriptors
         gatt.discoverServices();
-//            gatt.writeCharacteristic(c);
 
+//            gatt.writeCharacteristic(c);
 
 //            if (service != null)
 //            {
@@ -831,7 +834,44 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             toast("Please enable notification access on the next screen");
             return false;
         }
+
     }
+        private BroadcastReceiver mGattUpdateReceiver = new BroadcastReceiver()
+        {
+            @Override
+            public void onReceive(Context context, Intent intent)
+            {
+                final String action = intent.getAction();
+                if (BLEService.ACTION_GATT_CONNECTED.equals(action))
+                {
+                    isGattConnected = true;
+                    writeLine("ACTION_GATT_CONNECTED");
+//                    updateConnectionState(R.string.connected);
+//                    invalidateOptionsMenu();
+                }
+                else if (BLEService.ACTION_GATT_DISCONNECTED.equals(action))
+                {
+                    isGattConnected = false;
+                    writeLine("ACTION_GATT_DISCONNECTED");
+//                    updateConnectionState(R.string.disconnected);
+                    invalidateOptionsMenu();
+//                    clearUI();
+                }
+                else if (BLEService.ACTION_GATT_SERVICES_DISCOVERED.equals(action))
+                {
+                    // Show all the supported services and characteristics on the
+                    // user interface.
+
+                    writeLine("ACTION_GATT_SERVICES_DISCOVERED " + String.valueOf(action));
+//                    displayGattServices(BLEService.getSupportedGattServices());
+                }
+                else if (BLEService.ACTION_DATA_AVAILABLE.equals(action))
+                {
+                    writeLine("Action data available");
+//                    displayData(intent.getStringExtra(BLEService.EXTRA_DATA));
+                }
+            }
+        };
     //endregion
 
 }
