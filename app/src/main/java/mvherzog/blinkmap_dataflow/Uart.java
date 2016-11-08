@@ -47,6 +47,10 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     public static UUID DIS_HWREV_UUID = UUID.fromString("00002a26-0000-1000-8000-00805f9b34fb");
     public static UUID DIS_SWREV_UUID = UUID.fromString("00002a28-0000-1000-8000-00805f9b34fb");
 
+    //BlinkMap
+    public static UUID BLINKMAP_SUUID = UUID.fromString("23D113EF-5F78-2315-DEEF-1212CDAB0000");
+    public static UUID BLINKMAP_CUUID = UUID.fromString("23D113FE-5F78-2315-DEEF-1212CDAB0000");
+
     // Internal UART state.
     private Context context;
     private WeakHashMap<Callback, Object> callbacks;
@@ -68,13 +72,13 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     private Queue<BluetoothGattCharacteristic> readQueue;
 
     // Interface for a BluetoothLeUart client to be notified of UART actions.
-    public interface Callback {
-        public void onConnected(Uart uart);
-        public void onConnectFailed(Uart uart);
-        public void onDisconnected(Uart uart);
-        public void onReceive(Uart uart, BluetoothGattCharacteristic rx);
-        public void onDeviceFound(BluetoothDevice device);
-        public void onDeviceInfoAvailable();
+    interface Callback {
+        void onConnected(Uart uart);
+        void onConnectFailed(Uart uart);
+        void onDisconnected(Uart uart);
+        void onReceive(Uart uart, BluetoothGattCharacteristic rx);
+        void onDeviceFound(BluetoothDevice device);
+        void onDeviceInfoAvailable();
     }
 
     public Uart(Context context) {
@@ -221,9 +225,22 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
             return;
         }
 
+        BluetoothGattService blinkMapS = new BluetoothGattService(BLINKMAP_SUUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
+        BluetoothGattCharacteristic blinkMapC = new BluetoothGattCharacteristic(BLINKMAP_CUUID, BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ);
+        blinkMapC.setValue("Hello from Android");
+        blinkMapS.addCharacteristic(blinkMapC);
+
+        for (BluetoothGattService s : gatt.getServices()){
+            Log.w("Services", "UUID= " + s.getUuid());
+        }
+
         // Save reference to each UART characteristic.
         tx = gatt.getService(UART_UUID).getCharacteristic(TX_UUID);
         rx = gatt.getService(UART_UUID).getCharacteristic(RX_UUID);
+        Log.w("BlinkMapServ?", "Attempting to get blinkMap service");
+        for(BluetoothGattCharacteristic c : blinkMapS.getCharacteristics()){
+            Log.w("BlinkMapChar", "c="+c.getStringValue(0));
+        }
 
         // Save reference to each DIS characteristic.
         disManuf = gatt.getService(DIS_UUID).getCharacteristic(DIS_MANUF_UUID);
@@ -235,6 +252,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         // These need to be queued because we have to wait for the response to the first
         // read request before a second one can be processed (which makes you wonder why they
         // implemented this with async logic to begin with???)
+
         readQueue.offer(disManuf);
         readQueue.offer(disModel);
         readQueue.offer(disHWRev);
@@ -245,6 +263,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
         // Setup notifications on RX characteristic changes (i.e. data received).
         // First call setCharacteristicNotification to enable notification.
+        Log.w("onSerDisc", "Setcharnot for " + blinkMapC.getStringValue(0));
         if (!gatt.setCharacteristicNotification(rx, true)) {
             // Stop if the characteristic notification setup failed.
             connectFailure();
@@ -258,8 +277,9 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
             return;
         }
         desc.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+        rx.addDescriptor(desc);
         if (!gatt.writeDescriptor(desc)) {
-            Log.i("Uart", "couldn't write desc");
+            Log.i("Uart", String.format("Couldn't write desc. Contents: %d, Service UUID: %s, C_VALUE: %s", desc.describeContents(), desc.getCharacteristic().getService().getUuid(), desc.getCharacteristic().getStringValue(0)));
             // Stop if the client descriptor could not be written.
             connectFailure();
             return;
@@ -293,7 +313,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
             }
         }
         else {
-            //Log.w("DIS", "Failed reading characteristic " + characteristic.getUuid().toString());
+            Log.w("DIS", "Failed reading characteristic " + characteristic.getUuid().toString());
         }
     }
 

@@ -139,9 +139,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             public void onClick(View v)
             {
                 setUpBtnConnect(uart);
-                writeLine("Calling uart.connectFirstAvailable()");
-//                uart.getGatt().connect();
-                writeLine("After uart.connectFirstAvailable()");
             }
         });
 
@@ -181,52 +178,34 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         else
         {
             Log.i("Adapter", "initialized");
-            if (!uart.isConnected())
+            uart.connectFirstAvailable();
+            if(!uart.isConnected())
             {
                 Log.i("setUpBtnConnect", "UART not connected");
                 uart.connectFirstAvailable();
+//                onConnected(uart);
             }
             else
             {
                 isGattConnected = true;
                 Log.i("setUpBtnConnect", "UART connected");
+                sendData(uart);
             }
-//            if (!isBLEPaired(ADAFRUIT_NAME))
-//            {
-//                Log.i("BLE", "is NOT paired");
-//                if (adafruit == null)
-//                {
-//                    adafruit = adapter.getRemoteDevice(btAddress);
-//                }
-//                if (adafruit != null)
-//                {
-//                    Log.i("setUpBtnConnect", "Adafruit != null");
-////                    connectGATT();
-//                }
-//                else
-//                {
-//                    toast("Could not find Adafruit.");
-//                }
-//            }
-//            if (isBLEPaired(ADAFRUIT_NAME))
-//            {
-//                Log.d("BLE", "is paired");
-////                connectGATT();
-////                client.connect();
-//            }
-        }
-        if(isGattConnected && uart.connectFirst){
-            sendData(uart);
         }
     }
 
     public void sendData(Uart uart)
     {
+        gatt = uart.getGatt();
+        BluetoothGattService service = gatt.getService(Uart.CLIENT_UUID);
         while(uart.isConnected())
         {
             writeLine("While UART.isConnected");
+            writeCharacteristicToBLE = service.getCharacteristic(Uart.RX_UUID);
             writeCharacteristicToBLE.setValue("Hello from BlinkMap");
-            uart.onCharacteristicWrite(uart.getGatt(), writeCharacteristicToBLE, uart.getGatt().getConnectionState(adafruit));
+            service.addCharacteristic(writeCharacteristicToBLE);
+            gatt.writeCharacteristic(writeCharacteristicToBLE);
+//            uart.onCharacteristicWrite(uart.getGatt(), writeCharacteristicToBLE, uart.getGatt().getConnectionState(adafruit));
             writeLine("After onCharWrite('Hello from BlinkMap')");
         }
     }
@@ -238,6 +217,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     {
         // Called when UART device is connected and ready to send/receive data.
         writeLine("Connected!");
+        isGattConnected = true;
         sendData(uart);
         // Enable the send button
 //        runOnUiThread(new Runnable() {
