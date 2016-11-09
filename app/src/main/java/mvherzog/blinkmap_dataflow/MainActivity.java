@@ -178,7 +178,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         else
         {
             Log.i("Adapter", "initialized");
-            uart.connectFirstAvailable();
             if(!uart.isConnected())
             {
                 Log.i("setUpBtnConnect", "UART not connected");
@@ -280,6 +279,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     @Override
     public void onDeviceInfoAvailable()
     {
+        Log.i("onDeviceInfoAvailable", "Device info:");
         writeLine(uart.getDeviceInfo());
     }
 

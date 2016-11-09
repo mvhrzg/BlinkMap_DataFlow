@@ -5,18 +5,16 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
-import android.bluetooth.BluetoothProfile;
+import android.location.SettingInjectorService;
+import android.support.v4.util.LogWriter;
 import android.util.Log;
 
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.UUID;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothGatt;
-import android.bluetooth.BluetoothGattCallback;
-import android.bluetooth.BluetoothGattCharacteristic;
-import android.bluetooth.BluetoothGattDescriptor;
 import android.content.Context;
 
 import java.nio.ByteBuffer;
@@ -25,10 +23,12 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
-import java.util.UUID;
 import java.util.WeakHashMap;
 import java.lang.String;
 import java.util.concurrent.ConcurrentLinkedQueue;
+
+import static android.R.attr.logo;
+import static android.R.attr.x;
 
 public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeScanCallback {
 
@@ -38,7 +38,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     public static UUID RX_UUID   = UUID.fromString("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
 
     // UUID for the UART BTLE client characteristic which is necessary for notifications.
-    public static UUID CLIENT_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+    public static UUID CLIENT_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");//"00684201-1488-5977-4242-ABBA0FAAFE1"
 
     // UUIDs for the Device Information service and associated characeristics.
     public static UUID DIS_UUID       = UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb");
@@ -48,8 +48,12 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     public static UUID DIS_SWREV_UUID = UUID.fromString("00002a28-0000-1000-8000-00805f9b34fb");
 
     //BlinkMap
-    public static UUID BLINKMAP_SUUID = UUID.fromString("23D113EF-5F78-2315-DEEF-1212CDAB0000");
-    public static UUID BLINKMAP_CUUID = UUID.fromString("23D113FE-5F78-2315-DEEF-1212CDAB0000");
+    public static UUID BLINKMAP_SERVICE         = UUID.fromString("23D113EF-5F78-2315-DEEF-1212CDAB0000");
+    public static UUID BLINKMAP_CHARACTERISTIC  = UUID.fromString("23D113FE-5F78-2315-DEEF-1212CDAB0000");
+    private boolean blinkWritable = false;
+    private BluetoothGattService bService;
+    BluetoothGattCharacteristic bCharacteristic;
+
 
     // Internal UART state.
     private Context context;
@@ -70,6 +74,9 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     // Queues for characteristic read (synchronous)
     private Queue<BluetoothGattCharacteristic> readQueue;
+    private boolean calledWriteDesc;
+    private final LinkedList<Uart.ServiceAction> mQueue = new LinkedList<ServiceAction>();        // list of actions to execute
+    private volatile ServiceAction mCurrentAction;
 
     // Interface for a BluetoothLeUart client to be notified of UART actions.
     interface Callback {
@@ -99,6 +106,28 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         this.readQueue = new ConcurrentLinkedQueue<BluetoothGattCharacteristic>();
     }
 
+    public interface ServiceAction
+    {
+        ServiceAction NULL = new ServiceAction()
+        {
+            @Override
+            public boolean execute(BluetoothGatt bluetoothGatt)
+            {
+                // it is null action. do nothing.
+                return true;
+            }
+        };
+
+        /**
+         * Executes action.
+         *
+         * @param bluetoothGatt
+         * @return true - if action was executed instantly. false if action is waiting for feedback.
+         */
+        public boolean execute(BluetoothGatt bluetoothGatt);
+    }
+
+
     // Return instance of BluetoothGatt.
     public BluetoothGatt getGatt() {
         return gatt;
@@ -125,6 +154,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     // Send data to connected UART device.
     public void send(byte[] data) {
+        //need a write queue
         if (tx == null || data == null || data.length == 0) {
             // Do nothing if there is no connection or message to send.
             return;
@@ -197,6 +227,8 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         super.onConnectionStateChange(gatt, status, newState);
         if (newState == BluetoothGatt.STATE_CONNECTED) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
+//                gatt.getService(UART_UUID).addService(bService);
+//                gatt.getService(CLIENT_UUID).addService(bService);
                 // Connected to device, start discovering services.
                 if (!gatt.discoverServices()) {
                     // Error starting service discovery.
@@ -225,22 +257,49 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
             return;
         }
 
-        BluetoothGattService blinkMapS = new BluetoothGattService(BLINKMAP_SUUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
-        BluetoothGattCharacteristic blinkMapC = new BluetoothGattCharacteristic(BLINKMAP_CUUID, BluetoothGattCharacteristic.PROPERTY_READ, BluetoothGattCharacteristic.PERMISSION_READ);
-        blinkMapC.setValue("Hello from Android");
-        blinkMapS.addCharacteristic(blinkMapC);
-
         for (BluetoothGattService s : gatt.getServices()){
             Log.w("Services", "UUID= " + s.getUuid());
+            for(BluetoothGattCharacteristic c : s.getCharacteristics()){
+                Log.w("Setting char.value", String.format("%b", c.setValue("Mariana")));
+                Log.w("Characteristics", String.format("Value = %s. UUID = %s", c.getStringValue(0), c.getUuid()));
+                for(BluetoothGattDescriptor d : c.getDescriptors()){
+                    d.setValue("Herzog".getBytes());
+                    Log.w("Descriptors", "Value = " + Arrays.toString(d.getValue()));
+                }
+            }
         }
 
         // Save reference to each UART characteristic.
         tx = gatt.getService(UART_UUID).getCharacteristic(TX_UUID);
-        rx = gatt.getService(UART_UUID).getCharacteristic(RX_UUID);
-        Log.w("BlinkMapServ?", "Attempting to get blinkMap service");
-        for(BluetoothGattCharacteristic c : blinkMapS.getCharacteristics()){
-            Log.w("BlinkMapChar", "c="+c.getStringValue(0));
+        for(BluetoothGattDescriptor descriptor : tx.getDescriptors()){
+            descriptor.setValue("Hello".getBytes());
+            writeLine("tx Descriptors", "Value: %s", Arrays.toString(descriptor.getValue()));
         }
+        if(((tx.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) |
+                (tx.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) > 0){
+            Log.i("onServicesDiscovered","tx is writeable");
+        }
+        rx = gatt.getService(UART_UUID).getCharacteristic(RX_UUID);
+        if(((rx.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) |
+                (rx.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) > 0){
+            Log.i("onServicesDiscovered","rx is writeable");
+        }
+        else{
+            Log.i("onServicesDiscovered","rx is not writeable");
+        }
+//        if(((bCharacteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) |
+//                (bCharacteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) > 0){
+//            Log.i("onServicesDiscovered", "blinkMapCharacteristic is writeable");
+//            blinkWritable = true;
+//        }
+//        else
+//        {
+//            Log.i("onServicesDiscovered","bCharacteristic is not writeable");
+//        }
+//        Log.w("BlinkMapServ?", "Attempting to get blinkMap service");
+//        for(BluetoothGattCharacteristic c : bService.getCharacteristics()){
+//            Log.w("BlinkMapChar", "c="+c.getStringValue(0));
+//        }
 
         // Save reference to each DIS characteristic.
         disManuf = gatt.getService(DIS_UUID).getCharacteristic(DIS_MANUF_UUID);
@@ -253,44 +312,63 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         // read request before a second one can be processed (which makes you wonder why they
         // implemented this with async logic to begin with???)
 
+        readQueue.offer(rx);
+        readQueue.offer(tx);
         readQueue.offer(disManuf);
         readQueue.offer(disModel);
         readQueue.offer(disHWRev);
         readQueue.offer(disSWRev);
 
+
         // Request a dummy read to get the device information queue going
-        gatt.readCharacteristic(disManuf);
+//        gatt.readCharacteristic(disManuf);
 
         // Setup notifications on RX characteristic changes (i.e. data received).
         // First call setCharacteristicNotification to enable notification.
-        Log.w("onSerDisc", "Setcharnot for " + blinkMapC.getStringValue(0));
-        if (!gatt.setCharacteristicNotification(rx, true)) {
+//        Log.w("onSerDisc", "Setcharnot for " + bCharacteristic.getStringValue(0));
+        if (!gatt.setCharacteristicNotification(rx, true)) { //Originally rx
+            Log.i("onServicesDiscovered","couldn't setCharacteristicNotification for RX");
             // Stop if the characteristic notification setup failed.
             connectFailure();
             return;
         }
         // Next update the RX characteristic's client descriptor to enable notifications.
-        BluetoothGattDescriptor desc = rx.getDescriptor(CLIENT_UUID);
+        BluetoothGattDescriptor desc = rx.getDescriptor(CLIENT_UUID); //Originally rx
         if (desc == null) {
+            Log.i("OnServicesDiscovered", "desc == null");
             // Stop if the RX characteristic has no client descriptor.
             connectFailure();
             return;
         }
-        desc.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-        rx.addDescriptor(desc);
+        if(!gatt.writeCharacteristic(rx)){//Originally rx
+            writeLine("onServicesDicovered", "Couldn't write rx: %s", rx.getStringValue(0));
+        }
+        desc.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);//ENABLE_NOTIFICATION_VALUE);
+        Log.i("rx.addDescriptor(desc)", String.format("%b", rx.addDescriptor(desc)));
+
         if (!gatt.writeDescriptor(desc)) {
             Log.i("Uart", String.format("Couldn't write desc. Contents: %d, Service UUID: %s, C_VALUE: %s", desc.describeContents(), desc.getCharacteristic().getService().getUuid(), desc.getCharacteristic().getStringValue(0)));
             // Stop if the client descriptor could not be written.
             connectFailure();
             return;
+        }else{
+            writeLine("OnServicesDiscvered", "writeDescriptor = %s", Arrays.toString(desc.getValue()));
+
         }
+
         // Notify of connection completion.
+        Log.w("onServicesDiscovered", "Calling notifyOnReceive");
         notifyOnConnected(this);
+    }
+
+    public void writeLine(String prompt, String text, String value){
+        Log.w(prompt, String.format(text, value));
     }
 
     @Override
     public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
         super.onCharacteristicChanged(gatt, characteristic);
+        Log.w("onCharacteristicChanged", "Char Changed!");
         notifyOnReceive(this, characteristic);
     }
 
@@ -299,7 +377,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         super.onCharacteristicRead(gatt, characteristic, status);
 
         if (status == BluetoothGatt.GATT_SUCCESS) {
-            //Log.w("DIS", characteristic.getStringValue(0));
+            Log.w("DIS", "Status = success. Characteristic = " + characteristic.getStringValue(0));
             // Check if there is anything left in the queue
             BluetoothGattCharacteristic nextRequest = readQueue.poll();
             if(nextRequest != null){
@@ -313,16 +391,16 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
             }
         }
         else {
-            Log.w("DIS", "Failed reading characteristic " + characteristic.getUuid().toString());
+            Log.w("DIS", String.format("Failed reading characteristic (%s) %s", characteristic.getStringValue(0), characteristic.getUuid().toString()));
         }
     }
 
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
         super.onCharacteristicWrite(gatt, characteristic, status);
-
+        Log.d("onCharacteristicWrite","Called with status " + status);
         if (status == BluetoothGatt.GATT_SUCCESS) {
-             Log.d("Uart","Characteristic write successful");
+             Log.d("onCharacteristicWrite","Characteristic write successful");
         }
         writeInProgress = false;
     }
@@ -331,8 +409,10 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     public void onLeScan(BluetoothDevice device, int rssi, byte[] scanRecord) {
         // Stop if the device doesn't have the UART service.
         if (!parseUUIDs(scanRecord).contains(UART_UUID)) {
+            Log.i("onLeScan", "No UART uuid found");
             return;
         }
+        Log.i("onLeScan", "UART uuid found");
         // Notify registered callbacks of found device.
         notifyOnDeviceFound(device);
         // Connect to first found device if required.
@@ -348,9 +428,18 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     // Private functions to simplify the notification of all callbacks of a certain event.
     private void notifyOnConnected(Uart uart) {
+        Log.i("notifyOnConnected", "Connected! Attempting to send data: 'Hello'");
+
+
         for (Callback cb : callbacks.keySet()) {
+            Log.i("notifyOnConnected", "callback.keySet not null");
             if (cb != null) {
+                Log.i("notifyOnConnected", "callback not null");
                 cb.onConnected(uart);
+                uart.send("Hello");
+            }
+            else{
+                Log.i("notifyOnConnected", "callback null");
             }
         }
     }
@@ -380,7 +469,9 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     }
 
     private void notifyOnDeviceFound(BluetoothDevice device) {
+        Log.i("notifyOnDeviceFound", "notifyOnDeviceFound");
         for (Callback cb : callbacks.keySet()) {
+            Log.i("notifyOnDeviceFound", "callbacks.keySet not null");
             if (cb != null) {
                 cb.onDeviceFound(device);
             }
@@ -470,29 +561,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 //    // Constants
 //    private static String CHARACTERISTIC_CONFIG = "00002902-0000-1000-8000-00805f9b34fb";
 //
-//    public interface ServiceAction
-//    {
-//        ServiceAction NULL = new ServiceAction()
-//        {
-//            @Override
-//            public boolean execute(BluetoothGatt bluetoothGatt)
-//            {
-//                // it is null action. do nothing.
-//                return true;
-//            }
-//        };
-//
-//        /**
-//         * Executes action.
-//         *
-//         * @param bluetoothGatt
-//         * @return true - if action was executed instantly. false if action is waiting for feedback.
-//         */
-//        public boolean execute(BluetoothGatt bluetoothGatt);
-//    }
-//
-//    private final LinkedList<Gatt.ServiceAction> mQueue = new LinkedList<ServiceAction>();        // list of actions to execute
-//    private volatile ServiceAction mCurrentAction;
+
 //
 //    protected void read(BluetoothGattService gattService, String characteristicUUID, String descriptorUUID)
 //    {
@@ -698,23 +767,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 //        }
 //    }
 //
-//    @Override
-//    public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status)
-//    {
-//        super.onDescriptorRead(gatt, descriptor, status);
-//
-//        mCurrentAction = null;
-//        execute(gatt);
-//    }
-//
-//    @Override
-//    public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status)
-//    {
-//        super.onDescriptorWrite(gatt, descriptor, status);
-//
-//        mCurrentAction = null;
-//        execute(gatt);
-//    }
+
 //
 //    @Override
 //    public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
