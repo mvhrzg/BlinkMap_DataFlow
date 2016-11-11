@@ -286,7 +286,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         readQueue.offer(disSWRev);
 
         // Request a dummy read to get the device information queue going
-        writeLine("Requesting dummy read", gatt.readCharacteristic(disManuf));
+//        writeLine("Requesting dummy read", gatt.readCharacteristic(disManuf));
 
         // Setup notifications on RX characteristic changes (i.e. data received).
         // First call setCharacteristicNotification to enable notification.
@@ -308,32 +308,6 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         if (!gatt.writeDescriptor(desc))
         {
             writeLine("couldn't write desc: " + desc.describeContents(), new String(desc.getValue()));
-            // Stop if the client descriptor could not be written.
-            connectFailure();
-            return;
-        }
-
-
-        // Setup notifications on TX characteristic changes (i.e. data sent).
-        // First call setCharacteristicNotification to enable notification.
-        if (!gatt.setCharacteristicNotification(tx, true))
-        {
-            // Stop if the characteristic notification setup failed.
-            connectFailure();
-            return;
-        }
-        // Next update the RX characteristic's client descriptor to enable notifications.
-        BluetoothGattDescriptor desc2 = tx.getDescriptor(CLIENT_UUID);
-        if (desc2 == null)
-        {
-            // Stop if the RX characteristic has no client descriptor.
-            connectFailure();
-            return;
-        }
-        desc2.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-        if (!gatt.writeDescriptor(desc))
-        {
-            writeLine("couldn't write desc2: " + desc2.describeContents(), new String(desc2.getValue()));
             // Stop if the client descriptor could not be written.
             connectFailure();
             return;
@@ -417,6 +391,8 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     // Private functions to simplify the notification of all callbacks of a certain event.
     private void notifyOnConnected(Uart uart)
     {
+        writeLine("notifyOnConnected", "uart.connectFirst = " + uart.connectFirst);
+        writeLine("callback.keySet() = ", callbacks.keySet());
         for (Callback cb : callbacks.keySet())
         {
             if (cb != null)
