@@ -6,7 +6,10 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
+import android.content.Intent;
+import android.os.IBinder;
 import android.support.annotation.Nullable;
+import android.support.annotation.RequiresApi;
 import android.util.Log;
 
 import java.util.LinkedList;
@@ -19,6 +22,9 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.content.Context;
+import android.widget.Toast;
+
+import com.google.android.gms.games.multiplayer.turnbased.TurnBasedMatchEntity;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -34,6 +40,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeScanCallback
 {
 
+    private static final int MAX_PACKET_SIZE = 20;
     // UUIDs for UART service and associated characteristics.
     public static UUID UART_UUID = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
     public static UUID TX_UUID = UUID.fromString("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
@@ -65,6 +72,9 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     private BluetoothGattCharacteristic disHWRev;
     private BluetoothGattCharacteristic disSWRev;
     private boolean disAvailable;
+
+    //TAG
+    public static final String TAG = Uart.class.getSimpleName();
 
     // Queues for characteristic read (synchronous)
     private Queue<BluetoothGattCharacteristic> readQueue;
@@ -145,22 +155,29 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
             // Do nothing if there is no connection or message to send.
             return;
         }
+
         // Update TX characteristic value.  Note the setValue overload that takes a byte array must be used.
         tx.setValue(data);
         writeInProgress = true; // Set the write in progress flag
-        writeLine("Writing [tx] characteristic: ", tx.getStringValue(0));
+        writeLine("Writing [tx] characteristic: ", bytesToHex(tx.getValue()));
+        tx.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
         gatt.writeCharacteristic(tx);
         // ToDo: Update to include a timeout in case this goes into the weeds
         while (writeInProgress)
         {
-            writeLine("[tx] Characteristic write in progress");
-            ; // Wait for the flag to clear in onCharacteristicWrite
+            ;
         }
     }
 
     // Send data to connected UART device.
     public void send(String data)
     {
+        final byte[] buffer = data.getBytes();
+        final boolean writeRequest = (tx.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) > 0;
+        if (writeRequest)
+        {
+            send(buffer);
+        }
         if (data != null && !data.isEmpty())
         {
             send(data.getBytes(Charset.forName("UTF-8")));
@@ -183,9 +200,11 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     // Disconnect to a device if currently connected.
     public void disconnect()
     {
+        writeLine("disconnect(). gatt = ", gatt);
         if (gatt != null)
         {
             gatt.disconnect();
+            gatt.close();
         }
         gatt = null;
         tx = null;
@@ -228,11 +247,12 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState)
     {
         super.onConnectionStateChange(gatt, status, newState);
-        Log.i("onConnStateChanged", String.format("Status: %d, newState: %d", status, newState));
+        writeLine("onConnStateChanged", String.format("Status: %s, newState: %s", parseConnectionError(status), parseConnectionError(newState)));
         if (newState == BluetoothGatt.STATE_CONNECTED)
         {
             if (status == BluetoothGatt.GATT_SUCCESS)
             {
+                writeLine("Connected to adafruit. Start discovering services");
                 // Connected to device, start discovering services.
                 if (!gatt.discoverServices())
                 {
@@ -251,13 +271,27 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
             // Disconnected, notify callbacks of disconnection.
             rx = null;
             tx = null;
+            //Added by me
+            gatt.disconnect();
+            gatt.close();
             notifyOnDisconnected(this);
         }
+    }
+
+    private void writeLine(final Object text)
+    {
+        MainActivity.writeLine(TAG, text);
+    }
+
+    private void writeLine(final String prompt, final Object text)
+    {
+        MainActivity.writeLine(TAG, prompt, text);
     }
 
     @Override
     public void onServicesDiscovered(BluetoothGatt gatt, int status)
     {
+        writeLine("OnServicesDiscovered Status", parseConnectionError(status));
         super.onServicesDiscovered(gatt, status);
         // Notify connection failure if service discovery failed.
         if (status == BluetoothGatt.GATT_FAILURE)
@@ -286,12 +320,13 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         readQueue.offer(disSWRev);
 
         // Request a dummy read to get the device information queue going
-//        writeLine("Requesting dummy read", gatt.readCharacteristic(disManuf));
+//        writeLine(TAG, String.format("Requesting dummy read : %b", gatt.readCharacteristic(disManuf)));
 
         // Setup notifications on RX characteristic changes (i.e. data received).
         // First call setCharacteristicNotification to enable notification.
         if (!gatt.setCharacteristicNotification(rx, true))
         {
+            writeLine("couldn't set characteristic notification for rx = " + rx.getStringValue(0));
             // Stop if the characteristic notification setup failed.
             connectFailure();
             return;
@@ -300,6 +335,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         BluetoothGattDescriptor desc = rx.getDescriptor(CLIENT_UUID);
         if (desc == null)
         {
+            writeLine("rx.desc = null");
             // Stop if the RX characteristic has no client descriptor.
             connectFailure();
             return;
@@ -307,12 +343,11 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         desc.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
         if (!gatt.writeDescriptor(desc))
         {
-            writeLine("couldn't write desc: " + desc.describeContents(), new String(desc.getValue()));
+            writeLine("couldn't write desc: ", bytesToHex(desc.getValue()));
             // Stop if the client descriptor could not be written.
             connectFailure();
             return;
         }
-
 
         // Notify of connection completion.
         notifyOnConnected(this);
@@ -321,19 +356,20 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     @Override
     public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic)
     {
-        super.onCharacteristicChanged(gatt, characteristic);
         writeLine("onCharacteristicChanged", characteristic.getStringValue(0));
+        super.onCharacteristicChanged(gatt, characteristic);
         notifyOnReceive(this, characteristic);
     }
 
     @Override
     public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
     {
+        writeLine("onCharacteristicRead()", characteristic.getStringValue(0));
         super.onCharacteristicRead(gatt, characteristic, status);
 
         if (status == BluetoothGatt.GATT_SUCCESS)
         {
-            writeLine("onCharacteristicRead!: " + characteristic.getUuid(), characteristic.getStringValue(0));
+            writeLine("Read characteristic! " + characteristic.getUuid(), characteristic.getStringValue(0));
             // Check if there is anything left in the queue
             BluetoothGattCharacteristic nextRequest = readQueue.poll();
             if (nextRequest != null)
@@ -350,13 +386,15 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         }
         else
         {
-            Log.w("DIS", "Failed reading characteristic " + characteristic.getUuid().toString());
+            writeLine("Failed reading characteristic", characteristic.getUuid().toString());
         }
     }
 
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status)
     {
+        writeLine("onCharacteristicWrite()", String.format("Charactersitic value: %s, writeInProgress = %b", characteristic.getStringValue(0), writeInProgress));
+
         super.onCharacteristicWrite(gatt, characteristic, status);
 
         if (status == BluetoothGatt.GATT_SUCCESS)
@@ -369,6 +407,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     @Override
     public void onLeScan(BluetoothDevice device, int rssi, byte[] scanRecord)
     {
+        writeLine("onLeScan()", "Scanning...");
         // Stop if the device doesn't have the UART service.
         if (!parseUUIDs(scanRecord).contains(UART_UUID))
         {
@@ -379,20 +418,66 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         // Connect to first found device if required.
         if (connectFirst)
         {
+            writeLine("onLeScan()", String.format("connectFirst: %b", connectFirst));
             // Stop scanning for devices.
+            writeLine("onLeScan()", "Stopping scan...");
             stopScan();
             // Prevent connections to future found devices.
             connectFirst = false;
+            writeLine("onLeScan()", String.format("connectFirst: %b", connectFirst));
             // Connect to device.
-            gatt = device.connectGatt(context, true, this);
+            writeLine("onLeScan()", "calling device.connectGatt(context, true, this)");
+            gatt = device.connectGatt(context, true, this); //originally true
+        }
+    }
+
+    final protected static char[] hexArray = "0123456789ABCDEF".toCharArray();
+
+    public static String bytesToHex(byte[] bytes)
+    {
+        char[] hexChars = new char[bytes.length * 2];
+        for (int j = 0; j < bytes.length; j++)
+        {
+            int v = bytes[j] & 0xFF;
+            hexChars[j * 2] = hexArray[v >>> 4];
+            hexChars[j * 2 + 1] = hexArray[v & 0x0F];
+        }
+        return new String(hexChars);
+    }
+    
+    public static String parseConnectionError(final int error)
+    {
+        switch (error)
+        {
+            case BluetoothGatt.GATT_SUCCESS:
+                return "SUCCESS/STATE_DISCONNECTED";
+            case BluetoothGatt.STATE_CONNECTED:
+                return "STATE_CONNECTED";
+            case 0x01:
+                return "GATT CONN L2C FAILURE";
+            case 0x08:
+                return "GATT CONN TIMEOUT";
+            case 0x13:
+                return "GATT CONN TERMINATE PEER USER";
+            case 0x16:
+                return "GATT CONN TERMINATE LOCAL HOST";
+            case 0x3E:
+                return "GATT CONN FAIL ESTABLISH";
+            case 0x22:
+                return "GATT CONN LMP TIMEOUT";
+            case 0x0100:
+                return "GATT CONN CANCEL ";
+            case 0x0085:
+                return "GATT ERROR"; // Device not reachable
+            default:
+                return "UNKNOWN (" + error + ")";
         }
     }
 
     // Private functions to simplify the notification of all callbacks of a certain event.
     private void notifyOnConnected(Uart uart)
     {
-        writeLine("notifyOnConnected", "uart.connectFirst = " + uart.connectFirst);
-        writeLine("callback.keySet() = ", callbacks.keySet());
+        writeLine("notifyOnConnected", "callback.keySet() = " + callbacks.keySet());
         for (Callback cb : callbacks.keySet())
         {
             if (cb != null)
@@ -404,6 +489,8 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     private void notifyOnConnectFailed(Uart uart)
     {
+//        toast("Couldn't connect to Adafruit. Please press Connect again.");
+        writeLine("notifyOnConnectFailed()", "Couldn't connect to Adafruit. Please press Connect again.");
         for (Callback cb : callbacks.keySet())
         {
             if (cb != null)
@@ -415,6 +502,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     private void notifyOnDisconnected(Uart uart)
     {
+        writeLine("notifyOnDisconnected", "callback.keySet() = " + callbacks.keySet());
         for (Callback cb : callbacks.keySet())
         {
             if (cb != null)
@@ -426,6 +514,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     private void notifyOnReceive(Uart uart, BluetoothGattCharacteristic rx)
     {
+        writeLine("notifyOnReceive", "callback.keySet() = " + callbacks.keySet() + " rx = " + rx.getStringValue(0));
         for (Callback cb : callbacks.keySet())
         {
             if (cb != null)
@@ -437,6 +526,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     private void notifyOnDeviceFound(BluetoothDevice device)
     {
+        writeLine("notifyOnDeviceFound", String.format("deviceName = %s, bondState = %d", device.getName(), device.getBondState()));
         for (Callback cb : callbacks.keySet())
         {
             if (cb != null)
@@ -448,6 +538,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     private void notifyOnDeviceInfoAvailable()
     {
+        writeLine("notifyOnDeviceInfoAvailable", "callback.keySet() = " + callbacks.keySet());
         for (Callback cb : callbacks.keySet())
         {
             if (cb != null)
@@ -460,6 +551,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     // Notify callbacks of connection failure, and reset connection state.
     private void connectFailure()
     {
+        writeLine("connectFailure()");
         rx = null;
         tx = null;
         notifyOnConnectFailed(this);
@@ -531,33 +623,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         }
         return uuids;
     }
-
-    private void writeLine(final String prompt, Object text)
-    {
-        if (text instanceof Integer)
-        {
-            Log.v("Uart int", String.format(prompt + ": %d", text));
-        }
-        else
-        {
-
-            Log.v("Uart string", String.format(prompt + ": %s", text));
-        }
-    }
-
-    private void writeLine(final Object prompt)
-    {
-        if (prompt instanceof Integer)
-        {
-            Log.v("Uart int", String.valueOf(prompt));
-        }
-        else
-        {
-            Log.v("Uart string", String.valueOf(prompt));
-        }
-    }
 }
-
 
 //// Encapsulate a list of actions to execute. Actions should be queued and executed sequentially to avoid problems
 //public class Uart extends BluetoothGattCallback

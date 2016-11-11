@@ -4,5 +4,6 @@
     <string name="welcome">Welcome to BlinkMap!</string>
     <string name="success">Connected Successfully!</string>
     <string name="connect">Connect BlinkMap</string>
+    <string name="start">Start Transmitting</string>
     <string name="disconnect">Disconnect BlinkMap</string>
 </resources>
