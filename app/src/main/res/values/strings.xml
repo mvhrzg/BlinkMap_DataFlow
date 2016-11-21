@@ -6,4 +6,5 @@
     <string name="connect">Connect BlinkMap</string>
     <string name="start">Start Transmitting</string>
     <string name="disconnect">Disconnect BlinkMap</string>
+    <string name="dummyDest">Address, City, State, Zip, Country</string>
 </resources>

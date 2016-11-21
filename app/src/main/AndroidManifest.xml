@@ -7,10 +7,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"/>
+    <uses-permission android:name="android.permission.INTERNET" />
 
-    <permission
-        android:name="android.permission.BLUETOOTH"
-        android:label="BLUETOOTH"/>
+    <permission android:name="android.permission.BLUETOOTH"
+                android:label="BLUETOOTH"/>
     <permission android:name="android.permission.BLUETOOTH_ADMIN"/>
 
     <application
@@ -34,8 +34,6 @@
                 <action android:name="android.service.notification.NotificationListenerService"/>
             </intent-filter>
         </service>
-
-        <class android:name="mvherzog.blinkmap_dataflow.NotificationReader"/>
 
         <!--
  ATTENTION: This was auto-generated to add Google Play services to your project for
