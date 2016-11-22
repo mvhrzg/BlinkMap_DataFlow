@@ -11,14 +11,11 @@ import android.content.pm.PackageManager;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
-import android.net.http.HttpResponseCache;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.text.InputType;
-import android.util.JsonWriter;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
@@ -28,7 +25,6 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.android.gms.appdatasearch.GetRecentContextCall;
 import com.google.android.gms.appindexing.AppIndex;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -37,18 +33,7 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.model.LatLng;
 
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.json.JSONStringer;
-
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -79,6 +64,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private LocationRequest request;
     public String destination = "";
     public double destinationLatitude, destinationLongitude;
+    public static String[] stepStartLocationCoordinates, stepEndLocationCoordinates, stepManeuver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -449,9 +435,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public void onStop() {
         Log.d(TAG, "onStop()");
         super.onStop();
-        uart.unregisterCallback(this);
-        //Do I want this here?
-        uart.disconnect();
+//        uart.unregisterCallback(this);
         //        unregisterReceiver(receiver);
         if (client.isConnected()) {
             client.disconnect();
@@ -462,8 +446,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     protected void onDestroy() {
         super.onDestroy();
         Log.d(TAG, "onDestroy()");
-        uart.unregisterCallback(this);
-        uart.disconnect();
+//        uart.unregisterCallback(this);
+        //this is being called when the device rotates and disconnecting
         if (client.isConnected()) {
             client.disconnect();
         }

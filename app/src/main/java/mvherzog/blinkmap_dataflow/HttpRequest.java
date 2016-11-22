@@ -10,8 +10,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.InterfaceAddress;
 import java.net.URL;
-
+import java.util.Iterator;
 
 public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
     private static final String TAG = HttpRequest.class.getSimpleName();
@@ -27,7 +28,7 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
         requestString += "&key=" + key;
         writeLine("requestString", requestString);
         String/*Builder*/ response = "";//new StringBuilder();
-        JSONObject objResponse;
+        JSONObject jsonResponse;
         try {
             URL url = new URL(requestString);
             HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
@@ -36,16 +37,20 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
                 //Make disconnect button enabled, visible and clickable
                 BufferedReader input = new BufferedReader(
                         new InputStreamReader(httpURLConnection.getInputStream()));
-                String line = null;
+                String line;
                 while ((line = input.readLine()) != null) {
                     //                    response.append(line);
                     response += line;
                 }
                 input.close();
                 //Gets all steps
-                objResponse = new JSONObject(response);
-                //should be legs
-                return objResponse.getJSONArray("routes");
+                jsonResponse = new JSONObject(response);
+                //Gets routes array
+                JSONArray routes = jsonResponse.getJSONArray("routes");
+                //Gets bounds object
+                JSONObject bounds = routes.getJSONObject(0);
+
+                return bounds.getJSONArray("legs");
             }
         }
         catch (IOException | JSONException e) {
@@ -55,27 +60,68 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
         return null;
     }
 
-    protected void onPostExecute(JSONArray response) {
+    protected void onPostExecute(JSONArray legs) {
         writeLine("onPostExecute");
-        if (response != null) {
-            for (int i = 0; i < response.length(); i++) {
-                try {
-                    JSONObject end_location = response.getJSONObject(i).getJSONObject("end_location");
-                    writeLine("end_location", end_location.toString());
-                    JSONObject maneuver = response.getJSONObject(i).getJSONObject("maneuver");
-                    writeLine("maneuver", maneuver.toString());
-                    JSONObject start_location = response.getJSONObject(i).getJSONObject("start_location");
-                    writeLine("start_location", start_location.toString());
-                    //                    maneuver = steps.getJSONObject(i);
+        JSONObject leg;
+        JSONObject step;
+        JSONArray steps;
+        JSONObject end_location;
+        JSONObject start_location;
+        String maneuver;
+        if (legs != null) {
+            try {
+                leg = legs.getJSONObject(0);
+                //                    writeLine(String.format("leg.Object[%d]", i), leg.toString());
+                //                    Iterator<String> legsObjs = leg.keys();
+                //                    while(legsObjs.hasNext()){
+                //                        String key = (String) legsObjs.next();
+                //                        String value = leg.getString(key);
+                //                        writeLine("objects in legs", value);
+                //                    }
+                steps = leg.getJSONArray("steps");
+
+                MainActivity.stepManeuver = new String[steps.length()];
+                MainActivity.stepStartLocationCoordinates = new String[steps.length()];
+                MainActivity.stepEndLocationCoordinates = new String[steps.length()];
+
+                writeLine("steps", steps.toString());
+                for (int i = 0; i < steps.length(); i++) {
+                    step = steps.getJSONObject(i);
+                    writeLine(String.format("steps[%d]", i), step.toString());
+                    if (step.has("maneuver")) {
+                        //if the maneuver isn't null, fill out the arrays
+                        if (!step.get("maneuver").equals("")){
+                            maneuver = step.getString("maneuver");
+                            MainActivity.stepManeuver[i] = maneuver;
+                            //                        writeLine("maneuver/stepManeuver", MainActivity.stepManeuver);
+                            start_location = step.getJSONObject("start_location");
+                            MainActivity.stepStartLocationCoordinates[i] = start_location.toString();
+                            //                        writeLine("start_location/stepStart", MainActivity.stepStartLocationCoordinates);
+                            end_location = step.getJSONObject("end_location");
+                            MainActivity.stepEndLocationCoordinates[i] = end_location.toString();
+                            //                        writeLine("end_location/stepEnd", MainActivity.stepEndLocationCoordinates);
+                        }
+                    }
                 }
-                catch (JSONException e) {
-                    e.printStackTrace();
+                for (int i = 0; i < MainActivity.stepManeuver.length; i++) {
+                    writeLine(String.format("maneuver[%d]", i), MainActivity.stepManeuver[i]);
+                }
+
+                for (int i = 0; i < MainActivity.stepStartLocationCoordinates.length; i++) {
+                    writeLine(String.format("start[%d]", i), MainActivity.stepStartLocationCoordinates[i]);
+                }
+
+                for (int i = 0; i < MainActivity.stepEndLocationCoordinates.length; i++) {
+                    writeLine(String.format("end[%d]", i), MainActivity.stepEndLocationCoordinates[i]);
                 }
             }
+            catch (JSONException e) {
+                e.printStackTrace();
+            }//try-catch
         } else {
-            writeLine("steps is null");
-        }
-    }
+            writeLine("legs is null");
+        }//if-else
+    }//onPostExecute
 
     private void writeLine(final Object text) {
         MainActivity.writeLine(TAG, text);
