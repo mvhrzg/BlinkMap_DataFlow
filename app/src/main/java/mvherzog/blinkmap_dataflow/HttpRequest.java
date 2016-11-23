@@ -10,14 +10,22 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.InterfaceAddress;
 import java.net.URL;
-import java.util.Iterator;
 
 public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
     private static final String TAG = HttpRequest.class.getSimpleName();
-    private Exception ex;
-    JSONObject maneuver;
+    public Response r = null;
+
+    public HttpRequest(Response delegate) {
+        r = delegate;
+    }
+
+    public interface Response {
+        void populateDirectionArrays(String[] rManeuvers, /*Double[][] rStarts,*/ String[][] rEnds);
+
+        void onExecuteFinished();
+
+    }
 
     @Override
     protected JSONArray doInBackground(String... request) {
@@ -54,7 +62,6 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
             }
         }
         catch (IOException | JSONException e) {
-            this.ex = e;
             e.printStackTrace();
         }
         return null;
@@ -62,12 +69,18 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
 
     protected void onPostExecute(JSONArray legs) {
         writeLine("onPostExecute");
+        //JSON parse arrays
         JSONObject leg;
         JSONObject step;
         JSONArray steps;
-        JSONObject end_location;
-        JSONObject start_location;
-        String maneuver;
+//        JSONObject start_location;
+        JSONObject end_location; //This is where moves happen
+
+        //response arrays & manipulation string
+        String maneuver, trimmedManeuver;
+        String[] maneuvers;
+        String[][] /*starts,*/ ends;    //dimension #1: latitudes, dimension #2: longitudes
+
         if (legs != null) {
             try {
                 leg = legs.getJSONObject(0);
@@ -79,41 +92,44 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
                 //                        writeLine("objects in legs", value);
                 //                    }
                 steps = leg.getJSONArray("steps");
+                writeLine("STEPS.LENGTH", steps.length());
 
-                MainActivity.stepManeuver = new String[steps.length()];
-                MainActivity.stepStartLocationCoordinates = new String[steps.length()];
-                MainActivity.stepEndLocationCoordinates = new String[steps.length()];
+                maneuvers = new String[steps.length()];
+//                starts = new Double[steps.length()][steps.length()];
+                ends = new String[steps.length()][steps.length()];
 
                 writeLine("steps", steps.toString());
                 for (int i = 0; i < steps.length(); i++) {
                     step = steps.getJSONObject(i);
-                    writeLine(String.format("steps[%d]", i), step.toString());
+                    //                    writeLine(String.format("steps[%d]", i), step.toString());
                     if (step.has("maneuver")) {
-                        //if the maneuver isn't null, fill out the arrays
-                        if (!step.get("maneuver").equals("")){
-                            maneuver = step.getString("maneuver");
-                            MainActivity.stepManeuver[i] = maneuver;
-                            //                        writeLine("maneuver/stepManeuver", MainActivity.stepManeuver);
-                            start_location = step.getJSONObject("start_location");
-                            MainActivity.stepStartLocationCoordinates[i] = start_location.toString();
-                            //                        writeLine("start_location/stepStart", MainActivity.stepStartLocationCoordinates);
+                        maneuver = step.getString("maneuver");
+                        writeLine("maneuver before array insertion", maneuver.isEmpty());
+                        //if the step has a maneuver, populate arrays
+                        if (!maneuver.isEmpty()/* && !maneuver.trim().isEmpty()*/) {
+                            maneuvers[i] = maneuver;
+
+                            //initialize location JSON objects
+//                            start_location = step.getJSONObject("start_location");
                             end_location = step.getJSONObject("end_location");
-                            MainActivity.stepEndLocationCoordinates[i] = end_location.toString();
-                            //                        writeLine("end_location/stepEnd", MainActivity.stepEndLocationCoordinates);
+
+                            //insert latitudes
+//                            starts[i][0] = Double.valueOf(start_location.get("lat").toString());
+                            ends[i][0] = String.valueOf(end_location.get("lng").toString());
+
+                            //insert longitudes
+                            for (int j = i; j < steps.length(); j++) {
+//                                starts[0][j] = Double.valueOf(start_location.get("lng").toString());
+                                ends[0][j] = String.valueOf(end_location.get("lng").toString());
+                            }
                         }
+
                     }
                 }
-                for (int i = 0; i < MainActivity.stepManeuver.length; i++) {
-                    writeLine(String.format("maneuver[%d]", i), MainActivity.stepManeuver[i]);
-                }
 
-                for (int i = 0; i < MainActivity.stepStartLocationCoordinates.length; i++) {
-                    writeLine(String.format("start[%d]", i), MainActivity.stepStartLocationCoordinates[i]);
-                }
-
-                for (int i = 0; i < MainActivity.stepEndLocationCoordinates.length; i++) {
-                    writeLine(String.format("end[%d]", i), MainActivity.stepEndLocationCoordinates[i]);
-                }
+                //Sending the arrays back to MainActivity
+                r.populateDirectionArrays(maneuvers/*, starts*/, ends);
+                r.onExecuteFinished();
             }
             catch (JSONException e) {
                 e.printStackTrace();

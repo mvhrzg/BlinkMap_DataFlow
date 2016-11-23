@@ -38,7 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, Uart.Callback {
+public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, Uart.Callback, HttpRequest.Response {
     Button btnConnect, btnStart, btnDisconnect;
     EditText destinationText;
     TextView originText, oLat, oLng;
@@ -48,13 +48,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private Uart uart;
     private BluetoothAdapter adapter;
     public BluetoothDevice adafruit;
-    private final String btAddress = "C5:12:82:4F:6F:CD";
+    private static final String btAddress = "C5:12:82:4F:6F:CD";
     public BluetoothGatt gatt;
     private boolean isGattConnected = false;
     private ArrayList<BluetoothDevice> devices = new ArrayList<>();
-
-    //Write to BLE
-    //    public BluetoothGattCharacteristic chartoWrite;
 
     //Location Services
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
@@ -64,7 +61,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private LocationRequest request;
     public String destination = "";
     public double destinationLatitude, destinationLongitude;
-    public static String[] stepStartLocationCoordinates, stepEndLocationCoordinates, stepManeuver;
+    //HttpRequest
+    private String[] stepManeuver;
+    private String[][] /*stepStart,*/ stepEnds;
+    private boolean executeFinished;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -187,12 +187,39 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         btnStart.setClickable(true);
         btnStart.setEnabled(true);
 
-        String[] urlParams = {String.valueOf(oLat),
-                                String.valueOf(oLng),
-                                String.valueOf(dLat), String.valueOf(dLng)
-        };
+        String[] urlParams = {String.valueOf(oLat), String.valueOf(oLng), String.valueOf(
+                dLat), String.valueOf(dLng)};
 
-        new HttpRequest().execute(urlParams);
+        executeFinished = false;
+
+        HttpRequest httpRequest = new HttpRequest(this);
+        httpRequest.execute(urlParams);
+
+        if (executeFinished) {writeLine(TAG, "execute finished");} else {
+            writeLine(TAG, "execute didn't finish");
+        }
+    }
+
+    @Override
+    public void populateDirectionArrays(String[] rManeuvers/*, Double[][] rStarts*/, String[][] rEnds) {
+        stepManeuver = new String[rManeuvers.length];
+//        stepStart = new Double[rStarts.length][rStarts.length];
+        stepEnds = new String[rEnds.length][rEnds.length];
+        for (int i = 0; i < rManeuvers.length; i++) {
+            stepManeuver[i] = rManeuvers[i];
+//            stepStart[i][0] = rStarts[i][0];
+            stepEnds[i][0] = rEnds[i][0];
+            for (int j = i; j < rManeuvers.length; j++) {
+//                stepStart[0][j] = rStarts[0][j];
+                stepEnds[0][j] = rEnds[0][j];
+            }
+
+        }
+    }
+
+    @Override
+    public void onExecuteFinished() {
+        executeFinished = true;
     }
 
     // region Location Services
@@ -270,6 +297,29 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         handleNewLocation(location);
     }
 
+    private void handleNewLocation(Location location) {
+
+        double currentLatitude = location.getLatitude();
+        double currentLongitude = location.getLongitude();
+        //        writeLine("CurrentLat: ", currentLatitude);
+        //        writeLine("CurrentLon: ", currentLongitude);
+
+        //once we have the JSON with directions, handleNewLocation will use the current lat and lng
+        writeLine("handleNewLocation", "onExecuteFinish", executeFinished);
+        if (executeFinished) {  //if eecution finished
+            //loop through arrays and see if we get a match
+            for (int i = 0; i < stepEnds.length; i++) {
+                writeLine(TAG, String.format("maneuvers[%d]", i), stepManeuver[i]);
+//                writeLine(TAG, String.format("starts[%d][0]", i), stepStart[i][0]);
+                writeLine(TAG, String.format("ends[%d][0]", i), stepEnds[i][0]);
+                for (int j = i; j < stepEnds.length; j++) {
+//                    writeLine(TAG, String.format("starts[0][%d]", j), stepStart[0][j]);
+                    writeLine(TAG, String.format("ends[0][%d]", j), stepEnds[0][j]);
+                }
+            }
+        }
+    }
+
     public LatLng getLatLntFromTextAddress(String strAddress) {
 
         Geocoder coder = new Geocoder(this);
@@ -325,17 +375,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         }
 
         return fullAddress;
-    }
-
-    private Location handleNewLocation(Location location) {
-
-        double currentLatitude = location.getLatitude();
-        double currentLongitude = location.getLongitude();
-        //        writeLine("CurrentLat: ", currentLatitude);
-        //        writeLine("CurrentLon: ", currentLongitude);
-
-        //once we have the JSON with directions, handleNewLocation will use the current lat and lng
-        return location;
     }
 
     @Override
@@ -435,7 +474,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public void onStop() {
         Log.d(TAG, "onStop()");
         super.onStop();
-//        uart.unregisterCallback(this);
+        //        uart.unregisterCallback(this);
         //        unregisterReceiver(receiver);
         if (client.isConnected()) {
             client.disconnect();
@@ -446,7 +485,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     protected void onDestroy() {
         super.onDestroy();
         Log.d(TAG, "onDestroy()");
-//        uart.unregisterCallback(this);
+        //        uart.unregisterCallback(this);
         //this is being called when the device rotates and disconnecting
         if (client.isConnected()) {
             client.disconnect();
@@ -557,27 +596,37 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     }
 
     public static void writeLine(final String tag, final String prompt, Object text) {
-        if (text instanceof Integer) {
-            Log.i(tag, String.format(prompt + ": %d", text));
-        } else if (text instanceof String) {
-            Log.i(tag, String.format(prompt + ": %s", text));
-        } else if (text instanceof Double) {
-            Log.i(tag, String.format(prompt + ": %f", text));
+        if (text != null) {
+            if (text instanceof Integer) {
+                Log.i(tag, String.format(prompt + ": %d", text));
+            } else if (text instanceof String) {
+                Log.i(tag, String.format(prompt + ": %s", text));
+            } else if (text instanceof Double) {
+                Log.i(tag, String.format(prompt + ": %f", text));
+            }else if (text instanceof Float){
+                Log.i(tag, String.format(prompt + ": %f", text));
+            } else {
+                Log.i(tag, String.format(prompt + ": %b", text));
+            }
         } else {
-            Log.i(tag, String.format(prompt + ": %b", text));
+            Log.i(tag, "null");
         }
     }
 
     public static void writeLine(final String tag, final Object prompt) {
-        if (prompt instanceof Integer) {
-            Log.i(tag, String.valueOf(prompt));
-        } else if (prompt instanceof String) {
-            Log.i(tag, String.valueOf(prompt));
-        } else if (prompt instanceof Double) {
-            Log.i(tag, String.valueOf(prompt));
-        } else {
-            Log.i(tag, String.valueOf(prompt));
-        }
+        if (prompt != null) {
+            if (prompt instanceof Integer) {
+                Log.i(tag, String.valueOf(prompt));
+            } else if (prompt instanceof String) {
+                Log.i(tag, String.valueOf(prompt));
+            } else if (prompt instanceof Double) {
+                Log.i(tag, String.valueOf(prompt));
+            } else if (prompt instanceof Float){
+                Log.i(tag, String.valueOf(prompt));
+            } else {
+                Log.i(tag, String.valueOf(prompt));
+            }
+        } else { Log.i(tag, "null"); }
     }
 
     private void broadcastUpdate(final String action) {
