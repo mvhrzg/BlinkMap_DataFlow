@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, Uart.Callback, HttpRequest.Response {
+    private static final double EPSILON = 0.001;
     Button btnConnect, btnStart, btnDisconnect;
     EditText destinationText;
     TextView originText, oLat, oLng;
@@ -53,6 +54,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private boolean isGattConnected = false;
     private ArrayList<BluetoothDevice> devices = new ArrayList<>();
 
+    //Data
+    public byte[] left = {0x31, 0x6C, 0x0A};
+    public byte[] right = {0x31, 0x72, 0x0A};
+    public byte[] uturn = {0x31, 0x75, 0x0A};
+    public byte[] nextCommand = {0x31, 0x43, 0x0A};
+
     //Location Services
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
     private final int REQUEST_PERMISSION_FINE_LOCATION = 1;
@@ -62,8 +69,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public String destination = "";
     public double destinationLatitude, destinationLongitude;
     //HttpRequest
-    private String[] stepManeuver;
-    private String[][] /*stepStart,*/ stepEnds;
+    private String[] stepManeuver, stepStartLats, stepStartLngs, stepEndLats, stepEndLngs;
     private boolean executeFinished;
 
     @Override
@@ -128,12 +134,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         });
 
         //Sending data stops btnDisconnect from working
-        btnStart.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                sendData(uart);//getNewLocation());
-            }
-        });
+        //        btnStart.setOnClickListener(new View.OnClickListener() {
+        //            @Override
+        //            public void onClick(View v) {
+        //                sendData(uart);//getNewLocation());
+        //            }
+        //        });
 
         btnDisconnect.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -201,20 +207,20 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     }
 
     @Override
-    public void populateDirectionArrays(String[] rManeuvers/*, Double[][] rStarts*/, String[][] rEnds) {
+    public void populateDirectionArrays(String[] rManeuvers, String[] startLats, String[] startLngs, String[] endLats, String[] endLngs) {
         stepManeuver = new String[rManeuvers.length];
-//        stepStart = new Double[rStarts.length][rStarts.length];
-        stepEnds = new String[rEnds.length][rEnds.length];
+        stepStartLats = new String[startLats.length];
+        stepStartLngs = new String[startLngs.length];
+        stepEndLats = new String[endLats.length];
+        stepEndLngs = new String[endLngs.length];
         for (int i = 0; i < rManeuvers.length; i++) {
             stepManeuver[i] = rManeuvers[i];
-//            stepStart[i][0] = rStarts[i][0];
-            stepEnds[i][0] = rEnds[i][0];
-            for (int j = i; j < rManeuvers.length; j++) {
-//                stepStart[0][j] = rStarts[0][j];
-                stepEnds[0][j] = rEnds[0][j];
-            }
-
+            stepStartLats[i] = startLats[i];
+            stepStartLngs[i] = startLngs[i];
+            stepEndLats[i] = endLats[i];
+            stepEndLngs[i] = endLngs[i];
         }
+
     }
 
     @Override
@@ -299,32 +305,102 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     private void handleNewLocation(Location location) {
 
+        //Comparing as doubles brings it down to 6 decimal places
+
         double currentLatitude = location.getLatitude();
         double currentLongitude = location.getLongitude();
-        //        writeLine("CurrentLat: ", currentLatitude);
-        //        writeLine("CurrentLon: ", currentLongitude);
 
-        //once we have the JSON with directions, handleNewLocation will use the current lat and lng
         writeLine("handleNewLocation", "onExecuteFinish", executeFinished);
-        if (executeFinished) {  //if eecution finished
-            //loop through arrays and see if we get a match
-            for (int i = 0; i < stepEnds.length; i++) {
-                writeLine(TAG, String.format("maneuvers[%d]", i), stepManeuver[i]);
-//                writeLine(TAG, String.format("starts[%d][0]", i), stepStart[i][0]);
-                writeLine(TAG, String.format("ends[%d][0]", i), stepEnds[i][0]);
-                for (int j = i; j < stepEnds.length; j++) {
-//                    writeLine(TAG, String.format("starts[0][%d]", j), stepStart[0][j]);
-                    writeLine(TAG, String.format("ends[0][%d]", j), stepEnds[0][j]);
-                }
-            }
+        if (executeFinished) {  //if execution finished
+            writeLine("handleNewLocation", String.format("latitude: %f, longitude: %f", currentLatitude, currentLongitude));
+            writeLine("handleNewLocation", "before CheckProximity");
+            checkProximity(currentLatitude, currentLongitude);
+            writeLine("handleNewLocation", "after CheckProximity");
         }
+    }
+
+    public void checkProximity(double lat, double lng) {
+        Double latCoordinate;
+        Double lngCoordinate;
+        String maneuver;
+        //loop through arrays and see if we get a match
+        for (int i = 0; i < stepManeuver.length; i++) {
+            latCoordinate = Double.valueOf(stepStartLats[i]);
+            lngCoordinate = Double.valueOf(stepStartLngs[i]);
+            if (equals(latCoordinate, lat) && equals(lngCoordinate, lng)) {
+                writeLine(TAG, String.format("lats: %f and %f are equal. lngs: %f and %f are equal",
+                                             latCoordinate, lat, lngCoordinate, lng
+                ));
+                if (stepManeuver[i] != null) {
+                    writeLine("stepManeuver[i]", stepManeuver[i]);
+                    if (!stepManeuver[i].trim().isEmpty()) {
+                        maneuver = stepManeuver[i];
+                        writeLine("maneuver not empty", maneuver);
+                        if (maneuver.contains("left")) {
+                            writeLine("sendData(left)", "maneuver", maneuver);
+                            sendData(left);
+                            writeLine("sendData(left)", "after send left");
+                            writeLine("sendData(nextCommand)", "sending...");
+                            sendData(nextCommand);
+                            writeLine("sendData(nextCommand)", "after send nextCommand");
+                        }
+                        if (maneuver.contains("right")) {
+                            writeLine("sendData(right)", "maneuver", maneuver);
+                            sendData(right);
+                            writeLine("sendData(right)", "after send right");
+                            writeLine("sendData(nextCommand)", "sending...");
+                            sendData(nextCommand);
+                            writeLine("sendData(nextCommand)", "after send nextCommand");
+                        }
+                        if (maneuver.contains("uturn") || maneuver.contains("u-turn")) {
+                            writeLine("sendData(uturn)", "maneuver", maneuver);
+                            sendData(uturn);
+                            writeLine("sendData(left)", "after send uturn");
+                            writeLine("sendData(nextCommand)", "sending...");
+                            sendData(nextCommand);
+                            writeLine("sendData(nextCommand)", "after send nextCommand");
+                        }
+                        writeLine("maneuver", "didn't contain left, right or uturn");
+                    }
+                }
+            } else {
+                writeLine(TAG, String.format(
+                        "lats: %f and %f are different. lngs: %f and %f are different",
+                        latCoordinate, lat, lngCoordinate, lng
+                ));
+            }
+            //                writeLine(TAG, String.format("maneuvers[%d]", i), stepManeuver[i]);
+            //                writeLine(String.format("startLats[%d]", i), stepStartLats[i], lat);
+            //                writeLine(String.format("startLngs[%d]", i), stepStartLngs[i], lng);
+            //                writeLine(String.format("endLats[%d]", i), stepEndLats[i], lat);
+            //                writeLine(String.format("endLngs[%d]", i), stepEndLngs[i], lng);
+        }
+
+    }
+
+    /**
+     * Compare two doubles within a given epsilon
+     */
+    public static boolean equals(double a, double b, double eps) {
+        if (a == b) { return true; }
+        // If the difference is less than epsilon, treat as equal.
+        return Math.abs(a - b) < eps;
+    }
+
+    /**
+     * Compare two doubles, using default epsilon
+     */
+    public static boolean equals(double a, double b) {
+        if (a == b) { return true; }
+        // If the difference is less than epsilon, treat as equal.
+        return Math.abs(a - b) < EPSILON * Math.max(Math.abs(a), Math.abs(b));
     }
 
     public LatLng getLatLntFromTextAddress(String strAddress) {
 
         Geocoder coder = new Geocoder(this);
         List<Address> address;
-        LatLng dest = null;
+        LatLng dest;
 
         try {
             address = coder.getFromLocationName(strAddress, 5);
@@ -496,23 +572,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     //region  REGION GATT
 
     //This method will receive JSON
-    public void sendData(Uart uart/*, byte[] hexCommand*/) {
-        writeLine(TAG, "Inside sendData()");
-        //Once notifications are set up, change to while
+    public void sendData(byte[] hexCommand) {
         if (uart.isConnected()) {
-            writeLine("sendData", "Uart connected");
-            /*if(hexCommand[1] == 0x31){  //'l'
-                writeLine("sendData", "byteArray[1] = 'l'", hexCommand[1]);
-            }else if(hexCommand[1] == 0x72) {  //'r'
-                writeLine("sendData", "byteArray[1] = 'r'", hexCommand[1]);
-            }else if(hexCommand[1] == 0x75){  //'u'
-                writeLine("sendData", "byteArray[1] = 'u'", hexCommand[1]);
-            }*/
-            //"1l" + LF
-            byte[] data = {0x31, 0x6C, /*0X65, 0X66, 0X74,*/ 0X0A};
-            uart.send(data);
-            //            writeLine("sendData", "sending", hexCommand[1]);
-            //            uart.send(hexCommand);
+            writeLine("sendData", "sending", hexCommand);
+            uart.send(hexCommand);
+            writeLine("sendData", "sent", hexCommand);
         }
     }
 
@@ -596,37 +660,31 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     }
 
     public static void writeLine(final String tag, final String prompt, Object text) {
-        if (text != null) {
-            if (text instanceof Integer) {
-                Log.i(tag, String.format(prompt + ": %d", text));
-            } else if (text instanceof String) {
-                Log.i(tag, String.format(prompt + ": %s", text));
-            } else if (text instanceof Double) {
-                Log.i(tag, String.format(prompt + ": %f", text));
-            }else if (text instanceof Float){
-                Log.i(tag, String.format(prompt + ": %f", text));
-            } else {
-                Log.i(tag, String.format(prompt + ": %b", text));
-            }
+        if (text instanceof Integer) {
+            Log.i(tag, String.format(prompt + ": %d", text));
+        } else if (text instanceof String) {
+            Log.i(tag, String.format(prompt + ": %s", text));
+        } else if (text instanceof Double) {
+            Log.i(tag, String.format(prompt + ": %f", text));
+        } else if (text instanceof Float) {
+            Log.i(tag, String.format(prompt + ": %f", text));
         } else {
-            Log.i(tag, "null");
+            Log.i(tag, String.format(prompt + ": %b", text));
         }
     }
 
     public static void writeLine(final String tag, final Object prompt) {
-        if (prompt != null) {
-            if (prompt instanceof Integer) {
-                Log.i(tag, String.valueOf(prompt));
-            } else if (prompt instanceof String) {
-                Log.i(tag, String.valueOf(prompt));
-            } else if (prompt instanceof Double) {
-                Log.i(tag, String.valueOf(prompt));
-            } else if (prompt instanceof Float){
-                Log.i(tag, String.valueOf(prompt));
-            } else {
-                Log.i(tag, String.valueOf(prompt));
-            }
-        } else { Log.i(tag, "null"); }
+        if (prompt instanceof Integer) {
+            Log.i(tag, String.valueOf(prompt));
+        } else if (prompt instanceof String) {
+            Log.i(tag, String.valueOf(prompt));
+        } else if (prompt instanceof Double) {
+            Log.i(tag, String.valueOf(prompt));
+        } else if (prompt instanceof Float) {
+            Log.i(tag, String.valueOf(prompt));
+        } else {
+            Log.i(tag, String.valueOf(prompt));
+        }
     }
 
     private void broadcastUpdate(final String action) {
@@ -720,79 +778,5 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     }
 
     //endregion //BLE
-
-    //region Notification
-    //THIS WOULD GO INSIDE ONCREATE
-    //Not doing this rn. Trying to implement own navigation instead
-    //        launchNotificationAccessIfNotEnabled(false);
-    //        LocalBroadcastManager.getInstance(this).registerReceiver(onNotice, new IntentFilter("Msg"));
-    //Might only work if native Notification
-    //        writeLine(TAG, "launchNotificationAccessIfNotEnabled()", launchNotificationAccessIfNotEnabled());
-    //        if (launchNotificationAccessIfNotEnabled())
-    //        {
-    //            writeLine(TAG, "Notification listener enabled");
-    ////            registerReceiver(onReader, new IntentFilter());
-    //        }
-    //        else
-    //        {
-    //            writeLine(TAG, "Notification listener not enabled");
-    //            //service is not enabled try to enabled by calling...
-    ////            getApplicationContext().startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
-    //        }
-    //END ONCREATE
-    //    private BroadcastReceiver onNotice = new BroadcastReceiver()
-    //    {
-    //        @Override
-    //        public void onReceive(Context context, Intent intent)
-    //        {
-    //            writeLine("RECEIVER", "Received!");
-    //            String pack = intent.getStringExtra("package");
-    //            String title = intent.getStringExtra("title");
-    //            String text = intent.getStringExtra("text");
-    //
-    //            writeLine("Receiver", String.format("Title= %s", title));
-    //            writeLine("Receiver", String.format("Text= %s", text));
-    //            writeLine("Receiver", String.format("Pack= %s", pack));
-    //            writeLine("Receiver", String.format("getContext= %s", getApplicationContext()));
-    //        }
-    //    };
-    //
-    //    private BroadcastReceiver onReader = new BroadcastReceiver()
-    //    {
-    //        @Override
-    //        public void onReceive(Context context, Intent intent)
-    //        {
-    //            Log.d("RECEIVER", "Received!");
-    //            String temp = intent.getStringExtra("notification_event") + "n";// + txtView.getText();
-    //            Log.i("NotificationReceiver", temp);
-    //            //txtView.setText(temp);
-    //        }
-    //    };
-    //
-    //    public void launchNotificationAccessIfNotEnabled(boolean preCheck)
-    //    {
-    //        writeLine("preCheck is", preCheck);
-    //        if (preCheck)
-    //        {
-    //            if (Settings.Secure.getString(this.getContentResolver(), "enabled_notification_listeners").contains(getApplicationContext().getPackageName()))
-    //            {
-    //                //settings are enabled
-    //                writeLine(TAG, "notification access enabled");
-    //            }
-    //            else
-    //            {
-    //                writeLine(TAG, "Please enable notification access on the next screen.");
-    ////            toast("Please enable notification access on the next screen");
-    //                getApplicationContext().startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
-    //            }
-    //        }
-    //        else
-    //        {
-    //            getApplicationContext().startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
-    //        }
-    //
-    //    }
-    //
-    //endregion //Notification
 }
 

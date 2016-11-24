@@ -1,6 +1,7 @@
 package mvherzog.blinkmap_dataflow;
 
 import android.os.AsyncTask;
+import android.provider.ContactsContract;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -21,7 +22,7 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
     }
 
     public interface Response {
-        void populateDirectionArrays(String[] rManeuvers, /*Double[][] rStarts,*/ String[][] rEnds);
+        void populateDirectionArrays(String[] rManeuvers, String[] startLats, String[] startLngsEnd, String[] endLats, String[] endLngs);
 
         void onExecuteFinished();
 
@@ -35,7 +36,7 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
         requestString += "&destination=" + request[2] + "," + request[3];
         requestString += "&key=" + key;
         writeLine("requestString", requestString);
-        String/*Builder*/ response = "";//new StringBuilder();
+        String response = "";
         JSONObject jsonResponse;
         try {
             URL url = new URL(requestString);
@@ -47,7 +48,6 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
                         new InputStreamReader(httpURLConnection.getInputStream()));
                 String line;
                 while ((line = input.readLine()) != null) {
-                    //                    response.append(line);
                     response += line;
                 }
                 input.close();
@@ -73,13 +73,13 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
         JSONObject leg;
         JSONObject step;
         JSONArray steps;
-//        JSONObject start_location;
+        JSONObject start_location;
         JSONObject end_location; //This is where moves happen
 
         //response arrays & manipulation string
         String maneuver, trimmedManeuver;
         String[] maneuvers;
-        String[][] /*starts,*/ ends;    //dimension #1: latitudes, dimension #2: longitudes
+        String[] startLats, startLngs, endLats, endLngs;
 
         if (legs != null) {
             try {
@@ -94,41 +94,43 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
                 steps = leg.getJSONArray("steps");
                 writeLine("STEPS.LENGTH", steps.length());
 
+                //initialize arrays
                 maneuvers = new String[steps.length()];
-//                starts = new Double[steps.length()][steps.length()];
-                ends = new String[steps.length()][steps.length()];
+                startLats = new String[steps.length()];
+                startLngs = new String[steps.length()];
+                endLats = new String[steps.length()];
+                endLngs = new String[steps.length()];
 
                 writeLine("steps", steps.toString());
                 for (int i = 0; i < steps.length(); i++) {
                     step = steps.getJSONObject(i);
-                    //                    writeLine(String.format("steps[%d]", i), step.toString());
+
+
+                    //Commenting this out so I can see how accurate the current coordinates are (since I am not moving)
                     if (step.has("maneuver")) {
                         maneuver = step.getString("maneuver");
                         writeLine("maneuver before array insertion", maneuver.isEmpty());
                         //if the step has a maneuver, populate arrays
-                        if (!maneuver.isEmpty()/* && !maneuver.trim().isEmpty()*/) {
-                            maneuvers[i] = maneuver;
-
-                            //initialize location JSON objects
-//                            start_location = step.getJSONObject("start_location");
-                            end_location = step.getJSONObject("end_location");
-
-                            //insert latitudes
-//                            starts[i][0] = Double.valueOf(start_location.get("lat").toString());
-                            ends[i][0] = String.valueOf(end_location.get("lng").toString());
-
-                            //insert longitudes
-                            for (int j = i; j < steps.length(); j++) {
-//                                starts[0][j] = Double.valueOf(start_location.get("lng").toString());
-                                ends[0][j] = String.valueOf(end_location.get("lng").toString());
-                            }
-                        }
-
+                        maneuvers[i] = maneuver;
                     }
+
+                        //initialize location JSON objects
+                        start_location = step.getJSONObject("start_location");
+                        end_location = step.getJSONObject("end_location");
+
+                        //insert start locations
+                        startLats[i] = String.valueOf(start_location.get("lat"));
+                        startLngs[i] = String.valueOf(start_location.get("lng"));
+
+                        //insert end locations
+                        endLats[i] = String.valueOf(end_location.get("lat"));
+                        endLngs[i] = String.valueOf(end_location.get("lng"));
+//                    }
+
                 }
 
                 //Sending the arrays back to MainActivity
-                r.populateDirectionArrays(maneuvers/*, starts*/, ends);
+                r.populateDirectionArrays(maneuvers, startLats, startLngs, endLats, endLngs);
                 r.onExecuteFinished();
             }
             catch (JSONException e) {

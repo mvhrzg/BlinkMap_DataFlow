@@ -162,11 +162,13 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         writeLine("Writing [tx] characteristic: ", bytesToHex(tx.getValue()));
         tx.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
         gatt.writeCharacteristic(tx);
-        // ToDo: Update to include a timeout in case this goes into the weeds
-        while (writeInProgress)
-        {
-            ;
-        }
+        writeLine("before writeInProgress cleared");
+//        // ToDo: Update to include a timeout in case this goes into the weeds
+//        while (writeInProgress)
+//        {
+//            ;
+//        }
+        writeLine("after writeInProgress cleared");
     }
 
     // Send data to connected UART device.
