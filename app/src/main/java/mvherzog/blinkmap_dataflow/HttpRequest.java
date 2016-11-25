@@ -92,7 +92,6 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
                 //                        writeLine("objects in legs", value);
                 //                    }
                 steps = leg.getJSONArray("steps");
-                writeLine("STEPS.LENGTH", steps.length());
 
                 //initialize arrays
                 maneuvers = new String[steps.length()];
@@ -101,7 +100,7 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
                 endLats = new String[steps.length()];
                 endLngs = new String[steps.length()];
 
-                writeLine("steps", steps.toString());
+//                writeLine("steps", steps.toString());
                 for (int i = 0; i < steps.length(); i++) {
                     step = steps.getJSONObject(i);
 
@@ -109,7 +108,6 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
                     //Commenting this out so I can see how accurate the current coordinates are (since I am not moving)
                     if (step.has("maneuver")) {
                         maneuver = step.getString("maneuver");
-                        writeLine("maneuver before array insertion", maneuver.isEmpty());
                         //if the step has a maneuver, populate arrays
                         maneuvers[i] = maneuver;
                     }
