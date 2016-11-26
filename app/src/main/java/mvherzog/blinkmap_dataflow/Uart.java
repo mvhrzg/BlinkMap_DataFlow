@@ -12,7 +12,9 @@ import android.support.annotation.Nullable;
 import android.support.annotation.RequiresApi;
 import android.util.Log;
 
+import java.security.Timestamp;
 import java.text.BreakIterator;
+import java.util.Date;
 import java.util.LinkedList;
 import java.util.UUID;
 
@@ -155,7 +157,15 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         gatt.writeCharacteristic(tx);
         writeLine("before writeInProgress cleared");
         //        // ToDo: Update to include a timeout in case this goes into the weeds
-        while (writeInProgress);// this.adapter = this.adapter;
+        while (writeInProgress) {
+            //            writeLine("writeInProgress", writeInProgress);
+            try {
+                Thread.sleep(100);  //11/26/2016 - same idea as "while (!ble.isConnected)delay(500);"
+            }
+            catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
         writeLine("after writeInProgress cleared");
     }
 
@@ -224,11 +234,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     @Override
     public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
         super.onConnectionStateChange(gatt, status, newState);
-        writeLine("onConnStateChanged",
-                  String.format("Status: %s, newState: %s", parseConnectionError(status),
-                                parseConnectionError(newState)
-                  )
-        );
+        writeLine("onConnStateChanged", String.format("Status: %s, newState: %s", parseConnectionError(status), parseConnectionError(newState)));
         if (newState == BluetoothGatt.STATE_CONNECTED) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 writeLine("Connected to adafruit. Start discovering services");
@@ -333,9 +339,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         super.onCharacteristicRead(gatt, characteristic, status);
 
         if (status == BluetoothGatt.GATT_SUCCESS) {
-            writeLine("Read characteristic! " + characteristic.getUuid(),
-                      characteristic.getStringValue(0)
-            );
+            writeLine("Read characteristic! " + characteristic.getUuid(), characteristic.getStringValue(0));
             // Check if there is anything left in the queue
             BluetoothGattCharacteristic nextRequest = readQueue.poll();
             if (nextRequest != null) {
@@ -354,16 +358,13 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-        writeLine(
-                "onCharacteristicWrite()");//, String.format("Charactersitic value: %s, writeInProgress = %b", characteristic.getStringValue(0), writeInProgress));
+        writeLine("onCharacteristicWrite()");//, String.format("Charactersitic value: %s, writeInProgress = %b", characteristic.getStringValue(0), writeInProgress));
 
         super.onCharacteristicWrite(gatt, characteristic, status);
 
         if (status == BluetoothGatt.GATT_SUCCESS) {
             writeInProgress = false;
-            writeLine("Characteristic write successful",
-                      String.format("Value = %s, writeInProgress= %b",
-                                    characteristic.getStringValue(0), writeInProgress));
+            writeLine("Characteristic write successful", String.format("Value = %s, writeInProgress= %b", characteristic.getStringValue(0), writeInProgress));
         }
         writeInProgress = false;
     }
@@ -443,9 +444,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     private void notifyOnConnectFailed(Uart uart) {
         //        toast("Couldn't connect to Adafruit. Please press Connect again.");
-        writeLine("notifyOnConnectFailed()",
-                  "Couldn't connect to Adafruit. Please press Connect again."
-        );
+        writeLine("notifyOnConnectFailed()", "Couldn't connect to Adafruit. Please press Connect again.");
         for (Callback cb : callbacks.keySet()) {
             if (cb != null) {
                 cb.onConnectFailed(uart);
@@ -463,9 +462,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     }
 
     private void notifyOnReceive(Uart uart, BluetoothGattCharacteristic rx) {
-        writeLine("notifyOnReceive",
-                  "callback.keySet() = " + callbacks.keySet() + " rx = " + rx.getStringValue(0)
-        );
+        writeLine("notifyOnReceive", "callback.keySet() = " + callbacks.keySet() + " rx = " + rx.getStringValue(0));
         for (Callback cb : callbacks.keySet()) {
             if (cb != null) {
                 cb.onReceive(uart, rx);
@@ -474,11 +471,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     }
 
     private void notifyOnDeviceFound(BluetoothDevice device) {
-        writeLine("notifyOnDeviceFound",
-                  String.format("deviceName = %s, bondState = %d", device.getName(),
-                                device.getBondState()
-                  )
-        );
+        writeLine("notifyOnDeviceFound", String.format("deviceName = %s, bondState = %d", device.getName(), device.getBondState()));
         for (Callback cb : callbacks.keySet()) {
             if (cb != null) {
                 cb.onDeviceFound(device);
@@ -524,8 +517,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
                         int uuid16 = advertisedData[offset++];
                         uuid16 += (advertisedData[offset++] << 8);
                         len -= 2;
-                        uuids.add(UUID.fromString(
-                                String.format("%08x-0000-1000-8000-00805f9b34fb", uuid16)));
+                        uuids.add(UUID.fromString(String.format("%08x-0000-1000-8000-00805f9b34fb", uuid16)));
                     }
                     break;
                 case 0x06:// Partial list of 128-bit UUIDs
@@ -534,8 +526,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
                     while (len >= 16) {
                         try {
                             // Wrap the advertised bits and order them.
-                            ByteBuffer buffer = ByteBuffer.wrap(advertisedData, offset++, 16).order(
-                                    ByteOrder.LITTLE_ENDIAN);
+                            ByteBuffer buffer = ByteBuffer.wrap(advertisedData, offset++, 16).order(ByteOrder.LITTLE_ENDIAN);
                             long mostSignificantBit = buffer.getLong();
                             long leastSignificantBit = buffer.getLong();
                             uuids.add(new UUID(leastSignificantBit, mostSignificantBit));

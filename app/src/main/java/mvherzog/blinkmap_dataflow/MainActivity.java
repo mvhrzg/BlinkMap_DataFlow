@@ -56,7 +56,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private ArrayList<BluetoothDevice> devices = new ArrayList<>();
 
     //Data
-    public byte[] left = {0x31, 0x6C};//, 0x0A};
+    public byte[] left = {0x31, 0x6C, 0x0A};
     public byte[] right = {0x31, 0x72, 0x0A};
     public byte[] uturn = {0x31, 0x75, 0x0A};
     public byte[] nextCommand = {0x31, 0x23, 0x0A};
@@ -96,14 +96,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         setupClickListeners();
 
         //Set up Google API client
-        client = new GoogleApiClient.Builder(this).addConnectionCallbacks(
-                this).addOnConnectionFailedListener(this).addApi(LocationServices.API).addApi(
-                AppIndex.API).build();
+        client = new GoogleApiClient.Builder(this).addConnectionCallbacks(this).addOnConnectionFailedListener(this).addApi(LocationServices.API).addApi(AppIndex.API).build();
         writeLine("onCreate", "googleAPIClient", client.toString());
 
         //Set up location requests
-        request = LocationRequest.create().setPriority(
-                LocationRequest.PRIORITY_HIGH_ACCURACY).setInterval(2000).setFastestInterval(1000);
+        request = LocationRequest.create().setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY).setInterval(2000).setFastestInterval(1000);
         writeLine("onCreate", "locationRequest", request.toString());
     }
 
@@ -130,7 +127,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         btnConnect.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                toast("Scanning for device...");
+                //                toast("Scanning for device...");
                 setUpBtnConnect(uart);
             }
         });
@@ -173,10 +170,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
                         //get last know location (should be the same as origin text's lat and lng)
 
-                        buildUrlAndSendHTTPRequest(Double.valueOf(oLat.getText().toString()),
-                                                   Double.valueOf(oLng.getText().toString()),
-                                                   destinationLatitude, destinationLongitude
-                        );
+                        buildUrlAndSendHTTPRequest(Double.valueOf(oLat.getText().toString()), Double.valueOf(oLng.getText().toString()), destinationLatitude, destinationLongitude);
                     }
                 }
                 return handled;
@@ -194,8 +188,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         btnStart.setClickable(true);
         btnStart.setEnabled(true);
 
-        String[] urlParams = {String.valueOf(oLat), String.valueOf(oLng), String.valueOf(
-                dLat), String.valueOf(dLng)};
+        String[] urlParams = {String.valueOf(oLat), String.valueOf(oLng), String.valueOf(dLat), String.valueOf(dLng)};
 
         executeFinished = false;
 
@@ -236,17 +229,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //Get last known location, set invisible fields' text for origin latitude and origin
         // longitude (so we can build the url when user input destination)
 
-        if (ActivityCompat.checkSelfPermission(this,
-                                               Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this,
-                                                                                     Manifest.permission.ACCESS_COARSE_LOCATION
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this,
+                                                                                                                                                                          Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED) {
             LocationServices.FusedLocationApi.requestLocationUpdates(client, request, this);
         } else {
-            ActivityCompat.requestPermissions(this,
-                                              new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                                              REQUEST_PERMISSION_FINE_LOCATION
-            );
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_PERMISSION_FINE_LOCATION);
         }
         //Get last know locatin after we request location updates (for accuracy)
         Location location = LocationServices.FusedLocationApi.getLastLocation(client);
@@ -257,9 +245,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //Set origin text as address
         if (originText.getText().toString().isEmpty()) {
             writeLine("onConnected", "setting originText");
-            originText.append(getTextAddressFromLocation(location), 0,
-                              getTextAddressFromLocation(location).length()
-            );
+            originText.append(getTextAddressFromLocation(location), 0, getTextAddressFromLocation(location).length());
         }
 
         //Set hidden origin latitude field
@@ -284,17 +270,13 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         if (connectionResult.hasResolution()) {
             try {
                 // Start an Activity that tries to resolve the error
-                connectionResult.startResolutionForResult(this,
-                                                          CONNECTION_FAILURE_RESOLUTION_REQUEST
-                );
+                connectionResult.startResolutionForResult(this, CONNECTION_FAILURE_RESOLUTION_REQUEST);
             }
             catch (IntentSender.SendIntentException e) {
                 e.printStackTrace();
             }
         } else {
-            writeLine("onConnectionFailed",
-                      "Location services connection failed with code " + connectionResult.getErrorCode()
-            );
+            writeLine("onConnectionFailed", "Location services connection failed with code " + connectionResult.getErrorCode());
             onDestroy();
         }
     }
@@ -314,15 +296,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
         writeLine("handleNewLocation", "onExecuteFinish", executeFinished);
         if (executeFinished) {  //if execution finished
-            writeLine("handleNewLocation",
-                      String.format("latitude: %f, longitude: %f", currentLatitude,
-                                    currentLongitude
-                      )
-            );
+            writeLine("handleNewLocation", String.format("latitude: %f, longitude: %f", currentLatitude, currentLongitude));
             checkProximity(currentLatitude, currentLongitude);
-            writeLine("handleNewLocation",
-                      "..............................................................................................."
-            );
+            writeLine("handleNewLocation", "...............................................................................................");
         }
     }
 
@@ -336,49 +312,37 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             latCoordinate = Double.valueOf(stepStartLats[i]);
             lngCoordinate = Double.valueOf(stepStartLngs[i]);
             if (equals(latCoordinate, lat) && equals(lngCoordinate, lng)) {
-                writeLine(TAG, String.format("lats: %f and %f are equal. lngs: %f and %f are equal",
-                                             latCoordinate, lat, lngCoordinate, lng
-                ));
-                if (stepManeuver[i] != null) {
+                writeLine(TAG, String.format("lats: %f and %f are equal. lngs: %f and %f are equal", latCoordinate, lat, lngCoordinate, lng));
+                if (stepManeuver[i] != null) {  //if the step has a maneuver
                     writeLine("stepManeuver[i]", stepManeuver[i]);
                     maneuver = stepManeuver[i];
-                    /*if*/
-                    while (oldManeuver.equalsIgnoreCase(maneuver)) {
+                    if (!oldManeuver.equalsIgnoreCase(maneuver)) {  //and this is a new maneuver
+                        if (!oldManeuver.equals("")) {  //send nextCommand tag
+                            writeLine("checkProximity", "oldManeuver is different than maneuver", "sending nextCommand..........");
+                            sendData(nextCommand);
+                        }
+                        writeLine("checkProximity", "oldManeuver is empty. Analyzing first maneuver...");
                         if (maneuver.contains("left")) {
+                            writeLine("sendData(left)", "sending maneuver left", maneuver);
                             sendData(left);
-//                            sendData(nextCommand);
                         } else if (maneuver.contains("right")) {
+                            writeLine("sendData(right)", "sending maneuver right", maneuver);
                             sendData(right);
                         } else if (maneuver.contains("uturn") || maneuver.contains("u-turn")) {
+                            writeLine("sendData(uturn)", "sending uturn maneuver", maneuver);
                             sendData(uturn);
+                        } else {
+                            writeLine("maneuver", "didn't contain left, right or uturn");
                         }
-                    }
-
-                    if (maneuver.contains("left")) {
-                        writeLine("sendData(left)", "sending maneuver left", maneuver);
-                        sendData(left);
-                    } else if (maneuver.contains("right")) {
-                        writeLine("sendData(right)", "sending maneuver right", maneuver);
-                        sendData(right);
-                    } else if (maneuver.contains("uturn") || maneuver.contains("u-turn")) {
-                        writeLine("sendData(uturn)", "sending uturn maneuver", maneuver);
-                        sendData(uturn);
+                        oldManeuver = maneuver;
                     } else {
-                        writeLine("maneuver", "didn't contain left, right or uturn");
-                    }
-                    oldManeuver = maneuver;
-                    if (/*!*/oldManeuver.equalsIgnoreCase(maneuver)) {
-                        sendData(nextCommand);
+                        writeLine("checkProximity", "oldManeuver == maneuver");
                     }
                 }
             } else {
-                writeLine(TAG, String.format(
-                        "lats: %f and %f are different. lngs: %f and %f are different",
-                        latCoordinate, lat, lngCoordinate, lng
-                ));
+                writeLine(TAG, String.format("lats: %f and %f are different. lngs: %f and %f are different", latCoordinate, lat, lngCoordinate, lng));
             }
         }
-
     }
 
     /**
@@ -433,17 +397,13 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         String fullAddress = "";
 
         try {
-            addresses = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(),
-                                                 1
-            );
+            addresses = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(), 1);
             String addressLine = addresses.get(0).getAddressLine(0);
             String city = addresses.get(0).getLocality();
             String state = addresses.get(0).getAdminArea();
             String zip = addresses.get(0).getPostalCode();
             String country = addresses.get(0).getCountryCode();
-            fullAddress = String.format("%s, %s, %s, %s, %s", addressLine, city, state, zip,
-                                        country
-            );
+            fullAddress = String.format("%s, %s, %s, %s, %s", addressLine, city, state, zip, country);
             writeLine("getTextAddressFromLocation", "fullAddress", fullAddress);
         }
         catch (IOException e) {
@@ -458,9 +418,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         switch (requestCode) {
             case REQUEST_PERMISSION_FINE_LOCATION:
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    toast("Accessing location...");
+                    //                    toast("Accessing location...");
+                    writeLine(TAG, "Accessing location...");
                 } else {
-                    toast("Location permissions denied");
+                    //                    toast("Location permissions denied");
+                    writeLine(TAG, "Location permissions denied");
                 }
         }
     }
@@ -477,7 +439,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //If pairing is unsuccessful, throw an error
         if (!adapterInitialized()) {
             Log.i("Adapter", "not initialized");
-            toast("Please make sure Bluetooth is turned on.");
+            writeLine(TAG, "Please make sure Bluetooth is turned on.");
+            //            toast("Please make sure Bluetooth is turned on.");
             initializeAdapter();
         } else {
             writeLine("setUpBtnConnect", "adapter.initialized()", adapterInitialized());
@@ -485,25 +448,20 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             {
                 writeLine("setUpBtnConnect", "isBLEPaired", isBLEPaired(btAddress));
                 if (adafruit == null) {
-                    writeLine("setUpBtnConnect", "adafruit is null. getting remove device ",
-                              btAddress
-                    );
+                    writeLine("setUpBtnConnect", "adafruit is null. getting remove device ", btAddress);
                     adafruit = adapter.getRemoteDevice(btAddress);
                     if (adafruit != null) {
-                        writeLine("setUpBtnConnect",
-                                  "adafruit no longer null, calling uart.connectFirstAvailable"
-                        );
+                        writeLine("setUpBtnConnect", "adafruit no longer null, calling uart.connectFirstAvailable");
                         uart.connectFirstAvailable();
                     }
                 }
                 if (adafruit != null) {
-                    writeLine("setUpBtnConnect",
-                              "Adafruit != null, calling uart.connectFirstAvalable"
-                    );
+                    writeLine("setUpBtnConnect", "Adafruit != null, calling uart.connectFirstAvalable");
                     uart.connectFirstAvailable();
                     //  connectGATT(uart);
                 } else {
-                    toast("Could not find Adafruit.");
+                    writeLine(TAG, "Could not find Adafruit.");
+                    //                    toast("Could not find Adafruit.");
                 }
             }
             if (isBLEPaired(btAddress)) //only true if bonded
@@ -647,7 +605,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         // Called when a UART device is discovered (after calling startScan).
         writeLine(TAG, "Found device : " + device.getAddress());
         writeLine(TAG, "Waiting for a connection ...");
-        toast("Waiting for connection...");
+        //        toast("Waiting for connection...");
     }
 
     @Override
@@ -764,7 +722,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             }
         } else {
             Log.i("Adapter", "Bluetooth unavailable");
-            toast("Bluetooth Device unavailable");
+            //            toast("Bluetooth Device unavailable");
+            writeLine(TAG, "Bluetooth Device unavailable");
         }
     }
 
