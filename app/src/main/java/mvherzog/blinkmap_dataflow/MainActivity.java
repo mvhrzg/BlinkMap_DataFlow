@@ -33,15 +33,13 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.model.LatLng;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 
-public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, Uart.Callback, HttpRequest.Response {
-    private static final double EPSILON = 0.0001;
-    Button btnConnect, btnStart, btnDisconnect;
+public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, Uart.Callback, ObtainDirections.Response, BlinkmapGeocoder.Response {
+    private static final double EPSILON = 0.00001; //originally 0.0001
+    Button btnConnect, btnDisconnect;
     EditText destinationText;
     TextView originText, oLat, oLng;
     public static final String TAG = MainActivity.class.getSimpleName();
@@ -52,26 +50,28 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public BluetoothDevice adafruit;
     private static final String btAddress = "C5:12:82:4F:6F:CD";
     public BluetoothGatt gatt;
-    private boolean isGattConnected = false;
-    private ArrayList<BluetoothDevice> devices = new ArrayList<>();
 
     //Data
-    public byte[] left = {0x31, 0x6C, 0x0A};
-    public byte[] right = {0x31, 0x72, 0x0A};
-    public byte[] uturn = {0x31, 0x75, 0x0A};
-    public byte[] nextCommand = {0x31, 0x23, 0x0A};
+    public byte[] left = {0x31, 0x4C, 0x21, 0x0D};        //1L!CR --> left
+    public byte[] right = {0x31, 0x52, 0x21, 0x0D};       //1R!CR --> right
+    public byte[] uturn = {0x31, 0x55, 0x21, 0x0D};       //1U!CR --> uturn
+    public byte[] nextCommand = {0x31, 0x23, 0x21, 0x0D}; //1#!CR --> read next
+    public byte[] disconnected = {0x31, 0x40, 0x21, 0x0D};//1@!CR --> disconnected
+    private String oldManeuver = "";
 
     //Location Services
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
     private final int REQUEST_PERMISSION_FINE_LOCATION = 1;
-    public double currentLat, currentLon;
+    private boolean directionsState = false;
+    //    public double currentLat, currentLon;
     private GoogleApiClient client;
     private LocationRequest request;
     public String destination = "";
     public double destinationLatitude, destinationLongitude;
-    //HttpRequest
+    //ObtainDirections
     private String[] stepManeuver, stepStartLats, stepStartLngs, stepEndLats, stepEndLngs;
-    private boolean executeFinished;
+    private boolean executeDirectionsFinished, executeAddressFinished;
+    private ObtainDirections obtainDirections;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -89,7 +89,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         oLng = (TextView) findViewById(R.id.oLng);
         destinationText = (EditText) findViewById(R.id.inputDestination);
         btnConnect = (Button) findViewById(R.id.btnConnect);
-        btnStart = (Button) findViewById(R.id.btnStart);
+        //        btnStart = (Button) findViewById(R.id.btnStart);
         btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
 
         //Set up buttons and texts
@@ -97,11 +97,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
         //Set up Google API client
         client = new GoogleApiClient.Builder(this).addConnectionCallbacks(this).addOnConnectionFailedListener(this).addApi(LocationServices.API).addApi(AppIndex.API).build();
-        writeLine("onCreate", "googleAPIClient", client.toString());
 
         //Set up location requests
         request = LocationRequest.create().setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY).setInterval(2000).setFastestInterval(1000);
-        writeLine("onCreate", "locationRequest", request.toString());
     }
 
     public void setupClickListeners() {
@@ -120,15 +118,15 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         btnDisconnect.setVisibility(View.INVISIBLE);
 
         //Disable start transmitting button
-        btnStart.setClickable(false);
-        btnStart.setEnabled(false);
-        btnStart.setVisibility(View.INVISIBLE);
+        //        btnStart.setClickable(false);
+        //        btnStart.setEnabled(false);
+        //        btnStart.setVisibility(View.INVISIBLE);
 
         btnConnect.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                //                toast("Scanning for device...");
-                setUpBtnConnect(uart);
+                toast("You clicked connect");
+                setUpBtnConnect();
             }
         });
 
@@ -143,10 +141,22 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         btnDisconnect.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                writeLine("btnDisconnect", "Clicked");
+                writeLine("btnDisconnect", "Clicked to Disconnect");
                 client.disconnect();
+                writeLine("btnDisconnect", "sending disconnected", Arrays.toString(disconnected));
+                sendData(disconnected);
                 uart.unregisterCallback(MainActivity.this);
                 uart.disconnect();
+                writeLine("btnDisconnect", "after disconnected", Arrays.toString(disconnected));
+
+                //                writeLine("btnDisconnect", "obtainDirections.isCanceled()", obtainDirections.isCancelled());
+
+                //Disable all input except for btnConnect
+                destinationText.setEnabled(false);
+                destinationText.setVisibility(View.INVISIBLE);
+                btnDisconnect.setEnabled(false);
+                btnDisconnect.setClickable(false);
+
             }
         });
 
@@ -163,41 +173,44 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                     writeLine("editText", "destination", destination);
                     //Once we get the destination, get the latitude and longitude so we can build the directions request
                     if (destination != null) {
-                        destinationLatitude = getLatLntFromTextAddress(destination).latitude;
-                        destinationLongitude = getLatLntFromTextAddress(destination).longitude;
-                        writeLine("onEditorAction", "Lat of destination", destinationLatitude);
-                        writeLine("onEditorAction", "Lng of destination", destinationLongitude);
+                        try {
+                            //Have to fix this. Some addresses don't work and CRASH
+                            destinationLatitude = getLatLntFromTextAddress(destination).latitude;
+                            destinationLongitude = getLatLntFromTextAddress(destination).longitude;
+                            writeLine("onEditorAction", "Lat of destination", destinationLatitude);
+                            writeLine("onEditorAction", "Lng of destination", destinationLongitude);
 
-                        //get last know location (should be the same as origin text's lat and lng)
+                            //get last know location (should be the same as origin text's lat and lng)
 
-                        buildUrlAndSendHTTPRequest(Double.valueOf(oLat.getText().toString()), Double.valueOf(oLng.getText().toString()), destinationLatitude, destinationLongitude);
+                            getDirections(Double.valueOf(oLat.getText().toString()), Double.valueOf(oLng.getText().toString()), destinationLatitude, destinationLongitude);
+                        }
+                        catch (NullPointerException | NumberFormatException e) {
+                            e.printStackTrace();
+                        }
                     }
                 }
                 return handled;
             }
         });
+
     }
 
-    public void buildUrlAndSendHTTPRequest(double oLat, double oLng, double dLat, double dLng) {
+    public void getDirections(double oLat, double oLng, double dLat, double dLng) {
         btnDisconnect.setClickable(true);
         btnDisconnect.setEnabled(true);
         btnDisconnect.setVisibility(View.VISIBLE);
 
         //Make start transmitting button enabled, visible and clickable
-        btnStart.setVisibility(View.VISIBLE);
-        btnStart.setClickable(true);
-        btnStart.setEnabled(true);
+        //        btnStart.setVisibility(View.VISIBLE);
+        //        btnStart.setClickable(true);
+        //        btnStart.setEnabled(true);
 
         String[] urlParams = {String.valueOf(oLat), String.valueOf(oLng), String.valueOf(dLat), String.valueOf(dLng)};
 
-        executeFinished = false;
+        executeDirectionsFinished = false;
 
-        HttpRequest httpRequest = new HttpRequest(this);
-        httpRequest.execute(urlParams);
-
-        if (executeFinished) {writeLine(TAG, "execute finished");} else {
-            writeLine(TAG, "execute didn't finish");
-        }
+        obtainDirections = new ObtainDirections(this);
+        obtainDirections.execute(urlParams);
     }
 
     @Override
@@ -214,13 +227,40 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             stepEndLats[i] = endLats[i];
             stepEndLngs[i] = endLngs[i];
         }
+    }
 
+    public LatLng getLatLntFromTextAddress(String strAddress) {
+
+        Geocoder coder = new Geocoder(this);
+        List<Address> address;
+        LatLng dest;
+
+        try {
+            address = coder.getFromLocationName(strAddress, 5);
+            if (address == null) {
+                return null;
+            }
+            Address location = address.get(0);
+            for (int i = 0; i < address.size(); i++) {
+                Address loc2 = address.get(i);
+                writeLine("address.get(", String.valueOf(i), ") " + loc2.toString());
+            }
+            dest = new LatLng(location.getLatitude(), location.getLongitude());
+
+            return dest;
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        //return null if try fails
+        return null;
     }
 
     @Override
-    public void onExecuteFinished() {
-        executeFinished = true;
-    }
+    public void onExecuteFinished() {executeDirectionsFinished = true;}
+
+    @Override
+    public void onExecuteAddressFinished() {executeAddressFinished = true;}
 
     // region Location Services
     @Override
@@ -236,7 +276,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         } else {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_PERMISSION_FINE_LOCATION);
         }
-        //Get last know locatin after we request location updates (for accuracy)
+        //Get last know location after we request location updates (for accuracy)
         Location location = LocationServices.FusedLocationApi.getLastLocation(client);
 
         originText.setEnabled(true);
@@ -289,58 +329,90 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     private void handleNewLocation(Location location) {
 
-        //Comparing as doubles brings it down to 6 decimal places
-
         double currentLatitude = location.getLatitude();
         double currentLongitude = location.getLongitude();
-
-        writeLine("handleNewLocation", "onExecuteFinish", executeFinished);
-        if (executeFinished) {  //if execution finished
+        if (executeDirectionsFinished) {  //if execution finished
             writeLine("handleNewLocation", String.format("latitude: %f, longitude: %f", currentLatitude, currentLongitude));
-            checkProximity(currentLatitude, currentLongitude);
+            analyzeManeuver(currentLatitude, currentLongitude);
             writeLine("handleNewLocation", "...............................................................................................");
+        }
+
+
+    }
+
+    public void analyzeManeuver(double lat, double lng) {
+        Double startLat, startLng;
+        Double endLat, endLng;
+        String maneuver;
+
+        if(executeDirectionsFinished) {
+            //loop through arrays and see if we get a match
+            for (int i = 0; i < stepManeuver.length; i++) {
+                startLat = Double.valueOf(stepStartLats[i]);
+                startLng = Double.valueOf(stepStartLngs[i]);
+                //do a prepare here with a smaller EPSILON (one less zero), so we can turn a boolean on and prepare the move
+
+                if (equals(startLat, lat) && equals(startLng, lng)) {
+                    writeLine(TAG, String.format("lats: %f and %f are equal. lngs: %f and %f are equal", startLat, lat, startLng, lng));
+                    if (stepManeuver[i] != null) {  //if the step has a maneuver, assign it to maneuver string
+                        //Get the corresponding ending coordinates
+                        endLat = Double.valueOf(stepEndLats[i]);
+                        endLng = Double.valueOf(stepEndLngs[i]);
+                        maneuver = stepManeuver[i];
+                        writeLine("analyzeManeuver", String.format("maneuver = %s, oldManeuver = '%s'", maneuver, oldManeuver));
+                        sendManeuver(maneuver, oldManeuver);
+                        oldManeuver = maneuver;
+
+                        //while the current coordinates don't match the corresponding ending coordinates, wait...
+                        while (!equals(endLat, lat) && !equals(endLng, lng)) ;
+                        //once they match the end coordinates, send nextCommand to BLE
+                        if (equals(endLat, lat) && equals(endLng, lng)) {
+                            writeLine(TAG, "end coordinates are equal", "sending read next command..........");
+                            sendData(nextCommand);
+                        }
+                    }
+                } else {
+                    writeLine(TAG, String.format("lats: %f and %f are different. lngs: %f and %f are different", startLat, lat, startLng, lng));
+
+                }
+            }
         }
     }
 
-    public void checkProximity(double lat, double lng) {
-        Double latCoordinate;
-        Double lngCoordinate;
-        String maneuver;
-        String oldManeuver = "";
-        //loop through arrays and see if we get a match
-        for (int i = 0; i < stepManeuver.length; i++) {
-            latCoordinate = Double.valueOf(stepStartLats[i]);
-            lngCoordinate = Double.valueOf(stepStartLngs[i]);
-            if (equals(latCoordinate, lat) && equals(lngCoordinate, lng)) {
-                writeLine(TAG, String.format("lats: %f and %f are equal. lngs: %f and %f are equal", latCoordinate, lat, lngCoordinate, lng));
-                if (stepManeuver[i] != null) {  //if the step has a maneuver
-                    writeLine("stepManeuver[i]", stepManeuver[i]);
-                    maneuver = stepManeuver[i];
-                    if (!oldManeuver.equalsIgnoreCase(maneuver)) {  //and this is a new maneuver
-                        if (!oldManeuver.equals("")) {  //send nextCommand tag
-                            writeLine("checkProximity", "oldManeuver is different than maneuver", "sending nextCommand..........");
-                            sendData(nextCommand);
-                        }
-                        writeLine("checkProximity", "oldManeuver is empty. Analyzing first maneuver...");
-                        if (maneuver.contains("left")) {
-                            writeLine("sendData(left)", "sending maneuver left", maneuver);
-                            sendData(left);
-                        } else if (maneuver.contains("right")) {
-                            writeLine("sendData(right)", "sending maneuver right", maneuver);
-                            sendData(right);
-                        } else if (maneuver.contains("uturn") || maneuver.contains("u-turn")) {
-                            writeLine("sendData(uturn)", "sending uturn maneuver", maneuver);
-                            sendData(uturn);
-                        } else {
-                            writeLine("maneuver", "didn't contain left, right or uturn");
-                        }
-                        oldManeuver = maneuver;
-                    } else {
-                        writeLine("checkProximity", "oldManeuver == maneuver");
-                    }
+    private void sendManeuver(String maneuver, String previousManeuver) {
+        if (previousManeuver != null) {
+            /*if (previousManeuver.equals(maneuver)) {   //if oldManeuver isn't empty AND it's the same as before, do nothing
+                writeLine("sendManeuver", String.format("oldManeuver is NOT empty AND oldManeuver == maneuver. %s == %s", oldManeuver, maneuver));
+            } else if*/
+            if (!previousManeuver.equals(maneuver)) {     //if this is a different maneuver than the last
+                writeLine("sendManeuver", "START", ".......................................");
+                //Is this the first maneuver?
+                //We need to check so we know when to send nextCommand.
+                // nextCommand should only be sent if a maneuver has already happened
+                if (!previousManeuver.equals(""))  //oldManeuver != empty means at least one maneuver has already happened
+                {                             //at this point, we can send nextCommand
+                    sendData(nextCommand);
                 }
-            } else {
-                writeLine(TAG, String.format("lats: %f and %f are different. lngs: %f and %f are different", latCoordinate, lat, lngCoordinate, lng));
+                //Analyze Maneuver
+                if (maneuver.contains("left")) {
+                    writeLine("sendData(left)", "sending maneuver left", maneuver);
+                    sendData(left);
+                    writeLine("sendData(LEFT)", "oldManeuver", previousManeuver);
+                    writeLine("sendManeuver", "END", ".......................................");
+                } else if (maneuver.contains("right")) {
+                    writeLine("sendData(right)", "sending maneuver right", maneuver);
+                    sendData(right);
+                    writeLine("sendData(RIGHT)", "oldManeuver", previousManeuver);
+                    writeLine("sendManeuver", "END", ".......................................");
+                } else if (maneuver.contains("uturn") || maneuver.contains("u-turn")) {
+                    writeLine("sendData(uturn)", "sending uturn maneuver", maneuver);
+                    sendData(uturn);
+                    writeLine("sendData(UTURN)", "oldManeuver", previousManeuver);
+                    writeLine("sendManeuver", "END", ".......................................");
+                } else {
+                    writeLine("maneuver", "didn't contain left, right or uturn");
+                    writeLine("sendManeuver", "END", ".......................................");
+                }
             }
         }
     }
@@ -348,6 +420,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     /**
      * Compare two doubles within a given epsilon
      */
+
     public static boolean equals(double a, double b, double eps) {
         if (a == b) { return true; }
         // If the difference is less than epsilon, treat as equal.
@@ -363,37 +436,21 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         return Math.abs(a - b) < EPSILON * Math.max(Math.abs(a), Math.abs(b));
     }
 
-    public LatLng getLatLntFromTextAddress(String strAddress) {
-
-        Geocoder coder = new Geocoder(this);
-        List<Address> address;
-        LatLng dest;
-
-        try {
-            address = coder.getFromLocationName(strAddress, 5);
-            if (address == null) {
-                return null;
-            }
-            Address location = address.get(0);
-            for (int i = 0; i < address.size(); i++) {
-                Address loc2 = address.get(i);
-                writeLine("address.get(", String.valueOf(i), ") " + loc2.toString());
-            }
-            dest = new LatLng(location.getLatitude(), location.getLongitude());
-
-            return dest;
-        }
-        catch (IOException e) {
-            e.printStackTrace();
-        }
-        //return null if try fails
-        return null;
+    @Override
+    public void populateCoordinates(Double lat, Double lng) {
+        destinationLatitude = lat;
+        destinationLongitude = lng;
     }
+
+    //    public void getLatLntFromTextAddress(String strAddress) {
+    //        String[] splitAddr = strAddress.split(" ");
+    //        BlinkmapGeocoder latLng = n
+    //    }
 
     public String getTextAddressFromLocation(Location location) {
         Geocoder geocoder;
         List<Address> addresses;
-        geocoder = new Geocoder(this, Locale.getDefault());
+        geocoder = new Geocoder(this);
         String fullAddress = "";
 
         try {
@@ -433,41 +490,54 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         Toast.makeText(getApplicationContext(), s, Toast.LENGTH_LONG).show();
     }
 
-    private void setUpBtnConnect(Uart uart) {
-        Log.i("Clicked", "btnConnect");
-        //I want to connect and pair the Adafruit here
-        //If pairing is unsuccessful, throw an error
+    private void setUpBtnConnect() {
+        Log.i("btnConnect", "Clicked to Connect");
+        //If adapter isn't initialized, initialize it
         if (!adapterInitialized()) {
-            Log.i("Adapter", "not initialized");
-            writeLine(TAG, "Please make sure Bluetooth is turned on.");
-            //            toast("Please make sure Bluetooth is turned on.");
+            writeLine("setUpBtnConnect", "adapterInitialized()", adapterInitialized());
             initializeAdapter();
-        } else {
-            writeLine("setUpBtnConnect", "adapter.initialized()", adapterInitialized());
+        } else {    //if it is initialized, check if BLE is already paired
+            writeLine("setUpBtnConnect", "adapterInitialized()", adapterInitialized());
+            //if BLE isn't already paired
             if (!isBLEPaired(btAddress)) //only pre-paired if bonded
             {
                 writeLine("setUpBtnConnect", "isBLEPaired", isBLEPaired(btAddress));
+                //check if adafruit object is null, and initialize it with the BLE device
                 if (adafruit == null) {
-                    writeLine("setUpBtnConnect", "adafruit is null. getting remove device ", btAddress);
+                    writeLine("setUpBtnConnect", "adafruit is null. getting remote device ", btAddress);
                     adafruit = adapter.getRemoteDevice(btAddress);
                     if (adafruit != null) {
-                        writeLine("setUpBtnConnect", "adafruit no longer null, calling uart.connectFirstAvailable");
-                        uart.connectFirstAvailable();
+                        connectServices();
                     }
-                }
-                if (adafruit != null) {
+                } else {  //if adafruit object is not null
                     writeLine("setUpBtnConnect", "Adafruit != null, calling uart.connectFirstAvalable");
-                    uart.connectFirstAvailable();
-                    //  connectGATT(uart);
-                } else {
-                    writeLine(TAG, "Could not find Adafruit.");
-                    //                    toast("Could not find Adafruit.");
+                    connectServices();
                 }
-            }
-            if (isBLEPaired(btAddress)) //only true if bonded
-            {
+            } else {    //BLE is already paired
                 writeLine("setUpBtnConnect", "isBLEPaired", isBLEPaired(btAddress));
-                //  connectGATT();
+                connectServices();
+            }
+        }
+
+    }
+
+    public void connectServices() {
+        //if adafruit object is not null
+        if (adafruit != null) {
+            if (!isBLEPaired(btAddress)) {
+                writeLine("setUpBtnConnect", "adafruit no longer null, calling uart.connectFirstAvailable");
+                //connect BLE
+                uart.connectFirstAvailable();
+            }
+            //if already connected to location services, refresh it
+            if (client.isConnected()) {
+                writeLine("connectServices", "client is connected. disconnecting...");
+                client.disconnect();
+                writeLine("connectServices", "client is disconnected. connecting...");
+                client.connect();
+            } else {  //otherwise connect to location services
+                writeLine("connectServices", "client is disconnected. connecting...");
+                client.connect();
             }
         }
     }
@@ -497,19 +567,16 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     @Override
     public void onStart() {
         super.onStart();
-        //if calling this here, API connects before everything else
-        //        client.connect();
     }
 
     @Override
     public void onStop() {
         Log.d(TAG, "onStop()");
         super.onStop();
-        //        uart.unregisterCallback(this);
-        //        unregisterReceiver(receiver);
-        if (client.isConnected()) {
-            client.disconnect();
-        }
+        //        uart.unregisterCallback(this);  //trying to stop BLE from blinking when disconnected
+        //        if (client.isConnected()) {
+        //            client.disconnect();
+        //        }
     }
 
     @Override
@@ -518,9 +585,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         Log.d(TAG, "onDestroy()");
         //        uart.unregisterCallback(this);
         //this is being called when the device rotates and disconnecting
-        if (client.isConnected()) {
-            client.disconnect();
-        }
+        //        if (client.isConnected()) {
+        //            client.disconnect();
+        //        }
         //        unregisterReceiver(onReader);
     }
     //endregion //Android
@@ -545,16 +612,17 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 //Make destination visible and enabled
                 destinationText.setEnabled(true);
                 destinationText.setVisibility(View.VISIBLE);
+                btnDisconnect.setEnabled(true);
+                btnDisconnect.setClickable(true);
+                btnDisconnect.setVisibility(View.VISIBLE);
             }
         });
         while (!uart.isConnected()) ;
+        uart.registerCallback(MainActivity.this);
         writeLine(TAG, "Connected!");
         writeLine("setUpBtnConnect", "Calling client.connect()");
         client.connect();
-
-        //        String left = "1left";
-        //        writeLine("onConnected", String.format("calling uart.send(%s)", left));
-        //        uart.send(left);
+        //        toast("CONNECTED!!!!!!");
     }
 
     @Override
@@ -568,11 +636,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
                 btnDisconnect.setClickable(false);
                 btnDisconnect.setEnabled(false);
-                btnStart = (Button) findViewById(R.id.btnStart);
-                btnStart.setClickable(false);
-                btnStart.setEnabled(false);
+                //                btnStart = (Button) findViewById(R.id.btnStart);
+                //                btnStart.setClickable(false);
+                //                btnStart.setEnabled(false);
             }
         });
+        toast("CONNECTION FAILED");
     }
 
     @Override
@@ -581,6 +650,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //        gatt.disconnect();
         //        gatt.close();
         writeLine(TAG, "Disconnected!");
+        if (client.isConnected()) {
+            client.disconnect();
+        }
         //        runOnUiThread(new Runnable()
         //        {
         //            @Override
@@ -591,7 +663,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //                btnDisconnect.setEnabled(false);
         //            }
         //        });
-        writeLine("is device still bonded?", adafruit.getBondState());
+        //        toast("DISCONNECTED");
     }
 
     @Override

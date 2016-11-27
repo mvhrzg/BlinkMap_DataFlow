@@ -1,7 +1,10 @@
 package mvherzog.blinkmap_dataflow;
 
+import android.content.Context;
 import android.os.AsyncTask;
-import android.provider.ContactsContract;
+import android.util.Log;
+
+import com.google.android.gms.maps.model.LatLng;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -13,11 +16,12 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
-public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
-    private static final String TAG = HttpRequest.class.getSimpleName();
+public class ObtainDirections extends AsyncTask<String, JSONArray, JSONArray> {
+    private static final String TAG = ObtainDirections.class.getSimpleName();
+    final String key = "AIzaSyDx19YRUPUR38pUId34rkR7b8L3z61RTGA";
     public Response r = null;
 
-    public HttpRequest(Response delegate) {
+    public ObtainDirections(Response delegate) {
         r = delegate;
     }
 
@@ -30,7 +34,7 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
 
     @Override
     protected JSONArray doInBackground(String... request) {
-        String key = "AIzaSyDx19YRUPUR38pUId34rkR7b8L3z61RTGA";
+
         String requestString = "https://maps.googleapis.com/maps/api/directions/json?";
         requestString += "origin=" + request[0] + "," + request[1];
         requestString += "&destination=" + request[2] + "," + request[3];
@@ -44,8 +48,7 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
             if (httpURLConnection.getResponseCode() == HttpURLConnection.HTTP_OK) {
 
                 //Make disconnect button enabled, visible and clickable
-                BufferedReader input = new BufferedReader(
-                        new InputStreamReader(httpURLConnection.getInputStream()));
+                BufferedReader input = new BufferedReader(new InputStreamReader(httpURLConnection.getInputStream()));
                 String line;
                 while ((line = input.readLine()) != null) {
                     response += line;
@@ -60,6 +63,51 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
 
                 return bounds.getJSONArray("legs");
             }
+        }
+        catch (IOException | JSONException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    protected LatLng getLatLngFromAddress(String addr, Context context) {
+        LatLng dest;
+        String requestString = "https://maps.googleapis.com/maps/api/geocode/json?address=";
+        String[] input = addr.split(" ");
+        for (String i : input) {
+            requestString += "+";
+            requestString += i;
+        }
+        requestString += "&key=" + key;
+
+        String response = "";
+        JSONObject jsonResponse;
+        try {
+            URL url = new URL(requestString);
+            HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+            Log.i(TAG, "urlcode" + String.valueOf(httpURLConnection.getResponseCode()));
+            //            if (httpURLConnection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+
+            //Make disconnect button enabled, visible and clickable
+            BufferedReader buffer = new BufferedReader(
+                    new InputStreamReader(httpURLConnection.getInputStream())
+            );
+            String line;
+            while ((line = buffer.readLine()) != null) {
+                response += line;
+            }
+            buffer.close();
+            //Gets all steps
+            jsonResponse = new JSONObject(response);
+            //Gets routes array
+            //                JSONArray results = jsonResponse.getJSONArray("results");
+            //Gets bounds object
+            //                JSONObject bounds = routes.getJSONObject(0);
+            dest = new LatLng(Double.valueOf(jsonResponse.getJSONObject("location").get("lat").toString()),
+                              Double.valueOf(jsonResponse.getJSONObject("location").get("lng").toString())
+            );
+            return dest;
+            //            }
         }
         catch (IOException | JSONException e) {
             e.printStackTrace();
@@ -100,10 +148,9 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
                 endLats = new String[steps.length()];
                 endLngs = new String[steps.length()];
 
-//                writeLine("steps", steps.toString());
+                //                writeLine("steps", steps.toString());
                 for (int i = 0; i < steps.length(); i++) {
                     step = steps.getJSONObject(i);
-
 
                     //Commenting this out so I can see how accurate the current coordinates are (since I am not moving)
                     if (step.has("maneuver")) {
@@ -112,18 +159,18 @@ public class HttpRequest extends AsyncTask<String, JSONArray, JSONArray> {
                         maneuvers[i] = maneuver;
                     }
 
-                        //initialize location JSON objects
-                        start_location = step.getJSONObject("start_location");
-                        end_location = step.getJSONObject("end_location");
+                    //initialize location JSON objects
+                    start_location = step.getJSONObject("start_location");
+                    end_location = step.getJSONObject("end_location");
 
-                        //insert start locations
-                        startLats[i] = String.valueOf(start_location.get("lat"));
-                        startLngs[i] = String.valueOf(start_location.get("lng"));
+                    //insert start locations
+                    startLats[i] = String.valueOf(start_location.get("lat"));
+                    startLngs[i] = String.valueOf(start_location.get("lng"));
 
-                        //insert end locations
-                        endLats[i] = String.valueOf(end_location.get("lat"));
-                        endLngs[i] = String.valueOf(end_location.get("lng"));
-//                    }
+                    //insert end locations
+                    endLats[i] = String.valueOf(end_location.get("lat"));
+                    endLngs[i] = String.valueOf(end_location.get("lng"));
+                    //                    }
 
                 }
 
