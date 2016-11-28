@@ -20,25 +20,17 @@
         android:textStyle="normal|bold"
         android:textColor="@android:color/black"
         android:id="@+id/textView"
-        android:layout_alignParentTop="true"
-        android:layout_alignParentStart="true"/>
+        android:layout_centerHorizontal="true"
+        android:layout_alignParentTop="true"/>
 
     <!--Connect-->
-    <Button
-        android:text="@string/connect"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="100dp"
-        android:id="@+id/btnConnect"
-        android:layout_centerHorizontal="true"/>
 
     <!--Origin text-->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:id="@+id/displayOrigin"
-        android:layout_below="@+id/btnConnect"
-        android:layout_centerHorizontal="true"/>
+        android:layout_below="@+id/btnConnect"/>
 
     <!--Origin latitude-->
     <TextView
@@ -56,41 +48,48 @@
         android:id="@+id/oLng"
         android:visibility="gone"
         android:layout_below="@+id/btnConnect"
-        android:layout_centerHorizontal="true"
-        android:layout_alignLeft="@+id/inputDestination"/>
+        android:layout_centerHorizontal="true"/>
 
     <!--Destination input-->
+    <TextView
+        android:text="@string/destination"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:id="@+id/enterDest"
+        android:layout_above="@+id/inputDestination"
+        android:layout_centerHorizontal="true"/>
+
+    <Button
+        android:text="@string/connect"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/btnConnect"
+        android:layout_alignBaseline="@+id/btnDisconnect"
+        android:layout_alignBottom="@+id/btnDisconnect"
+        android:layout_toEndOf="@+id/displayOrigin"
+        android:layout_marginStart="56dp"/>
+
     <EditText
-        android:text="30 Town Sq Blvd, Asheville, NC 28803"
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
         android:hint="@string/dummyDest"
-        android:layout_marginTop="68dp"
+        android:layout_marginTop="158dp"
         android:id="@+id/inputDestination"
-        android:layout_below="@+id/displayOrigin"
         android:inputType="textPostalAddress|textCapWords|textAutoCorrect|textAutoComplete"
         android:imeOptions="actionSend"
-        android:layout_centerHorizontal="true"/>
+        android:layout_below="@+id/displayOrigin"
+        android:layout_toEndOf="@+id/displayOrigin"/>
 
-    <!--Transmit-->
-    <!--<Button-->
-        <!--android:text="@string/start"-->
-        <!--android:layout_width="wrap_content"-->
-        <!--android:layout_height="wrap_content"-->
-        <!--android:layout_marginTop="100dp"-->
-        <!--android:id="@+id/btnStart"-->
-        <!--android:layout_below="@+id/inputDestination"-->
-        <!--android:layout_centerHorizontal="true"/>-->
-
-    <!--Disconnect-->
     <Button
-        android:text="Disconnect BlinkMap"
+        android:text="@string/disconnect"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="68dp"
+        android:layout_marginTop="58dp"
         android:id="@+id/btnDisconnect"
-        android:layout_below="@+id/inputDestination"
-        android:layout_centerHorizontal="true"/>
+        android:layout_marginStart="15dp"
+        android:layout_below="@+id/textView"
+        android:layout_toEndOf="@+id/btnConnect"/>
 
 
 </RelativeLayout>

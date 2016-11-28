@@ -15,8 +15,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 public class BlinkmapGeocoder extends AsyncTask<String, LatLng, LatLng> {
-    private static final String TAG = ObtainDirections.class.getSimpleName();
-    final String key = "AIzaSyDx19YRUPUR38pUId34rkR7b8L3z61RTGA";
+    private static final String TAG = BlinkmapGeocoder.class.getSimpleName();
     public BlinkmapGeocoder.Response r = null;
 
     public interface Response {
@@ -31,7 +30,7 @@ public class BlinkmapGeocoder extends AsyncTask<String, LatLng, LatLng> {
 
     @Override
     protected LatLng doInBackground(String... addr) {
-
+        final String key = "AIzaSyDx19YRUPUR38pUId34rkR7b8L3z61RTGA";
         LatLng dest;
         String requestString = "https://maps.googleapis.com/maps/api/geocode/json?address=";
         for (String i : addr) {

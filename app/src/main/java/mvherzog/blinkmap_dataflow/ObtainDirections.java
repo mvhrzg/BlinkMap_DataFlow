@@ -70,51 +70,6 @@ public class ObtainDirections extends AsyncTask<String, JSONArray, JSONArray> {
         return null;
     }
 
-    protected LatLng getLatLngFromAddress(String addr, Context context) {
-        LatLng dest;
-        String requestString = "https://maps.googleapis.com/maps/api/geocode/json?address=";
-        String[] input = addr.split(" ");
-        for (String i : input) {
-            requestString += "+";
-            requestString += i;
-        }
-        requestString += "&key=" + key;
-
-        String response = "";
-        JSONObject jsonResponse;
-        try {
-            URL url = new URL(requestString);
-            HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
-            Log.i(TAG, "urlcode" + String.valueOf(httpURLConnection.getResponseCode()));
-            //            if (httpURLConnection.getResponseCode() == HttpURLConnection.HTTP_OK) {
-
-            //Make disconnect button enabled, visible and clickable
-            BufferedReader buffer = new BufferedReader(
-                    new InputStreamReader(httpURLConnection.getInputStream())
-            );
-            String line;
-            while ((line = buffer.readLine()) != null) {
-                response += line;
-            }
-            buffer.close();
-            //Gets all steps
-            jsonResponse = new JSONObject(response);
-            //Gets routes array
-            //                JSONArray results = jsonResponse.getJSONArray("results");
-            //Gets bounds object
-            //                JSONObject bounds = routes.getJSONObject(0);
-            dest = new LatLng(Double.valueOf(jsonResponse.getJSONObject("location").get("lat").toString()),
-                              Double.valueOf(jsonResponse.getJSONObject("location").get("lng").toString())
-            );
-            return dest;
-            //            }
-        }
-        catch (IOException | JSONException e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-
     protected void onPostExecute(JSONArray legs) {
         writeLine("onPostExecute");
         //JSON parse arrays

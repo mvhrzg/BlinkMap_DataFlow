@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
@@ -20,6 +21,7 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -31,17 +33,18 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.maps.model.LatLng;
 
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, Uart.Callback, ObtainDirections.Response, BlinkmapGeocoder.Response {
-    private static final double EPSILON = 0.00001; //originally 0.0001
+    private static final double HEADSUP_EPISLON = 0.0001;
+    private static final double EPSILON = 0.00001;
+
     Button btnConnect, btnDisconnect;
     EditText destinationText;
-    TextView originText, oLat, oLng;
+    TextView originText, oLat, oLng, enterDest;
     public static final String TAG = MainActivity.class.getSimpleName();
 
     //UART & GATT connection
@@ -62,16 +65,14 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     //Location Services
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
     private final int REQUEST_PERMISSION_FINE_LOCATION = 1;
-    private boolean directionsState = false;
-    //    public double currentLat, currentLon;
     private GoogleApiClient client;
     private LocationRequest request;
     public String destination = "";
-    public double destinationLatitude, destinationLongitude;
+    public double destLat, destLng;
+    private boolean requested = false;
     //ObtainDirections
     private String[] stepManeuver, stepStartLats, stepStartLngs, stepEndLats, stepEndLngs;
     private boolean executeDirectionsFinished, executeAddressFinished;
-    private ObtainDirections obtainDirections;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -87,6 +88,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         originText = (TextView) findViewById(R.id.displayOrigin);
         oLat = (TextView) findViewById(R.id.oLat);
         oLng = (TextView) findViewById(R.id.oLng);
+        enterDest = (TextView) findViewById(R.id.enterDest);
         destinationText = (EditText) findViewById(R.id.inputDestination);
         btnConnect = (Button) findViewById(R.id.btnConnect);
         //        btnStart = (Button) findViewById(R.id.btnStart);
@@ -109,6 +111,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         originText.setVisibility(View.INVISIBLE);
 
         //Disable destination text
+        enterDest.setVisibility(View.INVISIBLE);
+        enterDest.setEnabled(false);
+
         destinationText.setVisibility(View.INVISIBLE);
         destinationText.setEnabled(false);
 
@@ -149,9 +154,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 uart.disconnect();
                 writeLine("btnDisconnect", "after disconnected", Arrays.toString(disconnected));
 
-                //                writeLine("btnDisconnect", "obtainDirections.isCanceled()", obtainDirections.isCancelled());
-
                 //Disable all input except for btnConnect
+                enterDest.setEnabled(false);
+                enterDest.setVisibility(View.INVISIBLE);
                 destinationText.setEnabled(false);
                 destinationText.setVisibility(View.INVISIBLE);
                 btnDisconnect.setEnabled(false);
@@ -165,30 +170,19 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
                 boolean handled = false;
                 if (actionId == EditorInfo.IME_ACTION_SEND) {
-                    //                    MessageApi.SendMessageResult();
                     handled = true;
-                    //IME_ACTIONSEND = 4
-                    //gets text inside box
+                    //Get destination text
                     destination = destinationText.getText().toString();
                     writeLine("editText", "destination", destination);
                     //Once we get the destination, get the latitude and longitude so we can build the directions request
                     if (destination != null) {
-                        try {
-                            //Have to fix this. Some addresses don't work and CRASH
-                            destinationLatitude = getLatLntFromTextAddress(destination).latitude;
-                            destinationLongitude = getLatLntFromTextAddress(destination).longitude;
-                            writeLine("onEditorAction", "Lat of destination", destinationLatitude);
-                            writeLine("onEditorAction", "Lng of destination", destinationLongitude);
-
-                            //get last know location (should be the same as origin text's lat and lng)
-
-                            getDirections(Double.valueOf(oLat.getText().toString()), Double.valueOf(oLng.getText().toString()), destinationLatitude, destinationLongitude);
-                        }
-                        catch (NullPointerException | NumberFormatException e) {
-                            e.printStackTrace();
-                        }
+                        getLatLntFromTextAddress(destination);
                     }
+                    //Collapse keyboard once 'Enter'
+                    InputMethodManager inputManager = (InputMethodManager) MainActivity.this.getSystemService(Context.INPUT_METHOD_SERVICE);
+                    inputManager.hideSoftInputFromWindow(MainActivity.this.getCurrentFocus().getWindowToken(), InputMethodManager.HIDE_NOT_ALWAYS);
                 }
+
                 return handled;
             }
         });
@@ -200,17 +194,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         btnDisconnect.setEnabled(true);
         btnDisconnect.setVisibility(View.VISIBLE);
 
-        //Make start transmitting button enabled, visible and clickable
-        //        btnStart.setVisibility(View.VISIBLE);
-        //        btnStart.setClickable(true);
-        //        btnStart.setEnabled(true);
-
         String[] urlParams = {String.valueOf(oLat), String.valueOf(oLng), String.valueOf(dLat), String.valueOf(dLng)};
 
         executeDirectionsFinished = false;
 
-        obtainDirections = new ObtainDirections(this);
-        obtainDirections.execute(urlParams);
+        new ObtainDirections(this).execute(urlParams);
     }
 
     @Override
@@ -229,31 +217,36 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         }
     }
 
-    public LatLng getLatLntFromTextAddress(String strAddress) {
+    public void getLatLntFromTextAddress(String strAddress) {
 
-        Geocoder coder = new Geocoder(this);
-        List<Address> address;
-        LatLng dest;
+        String[] splitAddr = strAddress.split(" ");
+        executeAddressFinished = false;
 
-        try {
-            address = coder.getFromLocationName(strAddress, 5);
-            if (address == null) {
-                return null;
-            }
-            Address location = address.get(0);
-            for (int i = 0; i < address.size(); i++) {
-                Address loc2 = address.get(i);
-                writeLine("address.get(", String.valueOf(i), ") " + loc2.toString());
-            }
-            dest = new LatLng(location.getLatitude(), location.getLongitude());
+        new BlinkmapGeocoder(MainActivity.this).execute(splitAddr);
 
-            return dest;
-        }
-        catch (IOException e) {
-            e.printStackTrace();
-        }
-        //return null if try fails
-        return null;
+        //        Geocoder coder = new Geocoder(this);
+        //        List<Address> address;
+        //        LatLng dest;
+        //
+        //        try {
+        //            address = coder.getFromLocationName(strAddress, 5);
+        //            if (address == null) {
+        //                return null;
+        //            }
+        //            Address location = address.get(0);
+        //            for (int i = 0; i < address.size(); i++) {
+        //                Address loc2 = address.get(i);
+        //                writeLine("address.get(", String.valueOf(i), ") " + loc2.toString());
+        //            }
+        //            dest = new LatLng(location.getLatitude(), location.getLongitude());
+        //
+        //            return dest;
+        //        }
+        //        catch (IOException e) {
+        //            e.printStackTrace();
+        //        }
+        //        //return null if try fails
+        //        return null;
     }
 
     @Override
@@ -323,7 +316,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     @Override
     public void onLocationChanged(Location location) {
-        //        writeLine("onLocationChanged", "location changed");
+        //Only get directions if we have the destination's text address
+        if (executeAddressFinished && !executeDirectionsFinished && !requested) {
+            getDirections(Double.valueOf(oLat.getText().toString()), Double.valueOf(oLng.getText().toString()), destLat, destLng);
+            requested = true;
+        }
         handleNewLocation(location);
     }
 
@@ -331,88 +328,97 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
         double currentLatitude = location.getLatitude();
         double currentLongitude = location.getLongitude();
+
         if (executeDirectionsFinished) {  //if execution finished
             writeLine("handleNewLocation", String.format("latitude: %f, longitude: %f", currentLatitude, currentLongitude));
             analyzeManeuver(currentLatitude, currentLongitude);
             writeLine("handleNewLocation", "...............................................................................................");
         }
 
-
     }
 
     public void analyzeManeuver(double lat, double lng) {
         Double startLat, startLng;
         Double endLat, endLng;
-        String maneuver;
+        String maneuver = "";
+        boolean started = false;
+        int startIndex = -1;
 
-        if(executeDirectionsFinished) {
+        if (executeDirectionsFinished) {
             //loop through arrays and see if we get a match
             for (int i = 0; i < stepManeuver.length; i++) {
-                startLat = Double.valueOf(stepStartLats[i]);
-                startLng = Double.valueOf(stepStartLngs[i]);
-                //do a prepare here with a smaller EPSILON (one less zero), so we can turn a boolean on and prepare the move
-
-                if (equals(startLat, lat) && equals(startLng, lng)) {
-                    writeLine(TAG, String.format("lats: %f and %f are equal. lngs: %f and %f are equal", startLat, lat, startLng, lng));
-                    if (stepManeuver[i] != null) {  //if the step has a maneuver, assign it to maneuver string
-                        //Get the corresponding ending coordinates
-                        endLat = Double.valueOf(stepEndLats[i]);
-                        endLng = Double.valueOf(stepEndLngs[i]);
+                //If this step has a maneuver
+                if (stepManeuver[i] != null) {
+                    //Get the starting and corresponding ending coordinates
+                    startLat = Double.valueOf(stepStartLats[i]);
+                    startLng = Double.valueOf(stepStartLngs[i]);
+                    endLat = Double.valueOf(stepEndLats[i]);
+                    endLng = Double.valueOf(stepEndLngs[i]);
+                    //if we're at the start of a maneuver, send the maneuver to BLE
+                    if (equals(startLat, lat) && equals(startLng, lng)) {
+                        //Get the current maneuver
                         maneuver = stepManeuver[i];
-                        writeLine("analyzeManeuver", String.format("maneuver = %s, oldManeuver = '%s'", maneuver, oldManeuver));
+                        writeLine("analyzeManeuver",
+                                  String.format("(%d) START '%s' (oldManeuver: %s). [EQUAL] Lats: %f | %f -- Lngs: %f | %f", i, maneuver, oldManeuver, startLat, lat, startLng, lng)
+                        );
+                        writeLine("[EQUAL Starts]", "Sending command", maneuver);
+                        //Send to BLE
                         sendManeuver(maneuver, oldManeuver);
-                        oldManeuver = maneuver;
-
-                        //while the current coordinates don't match the corresponding ending coordinates, wait...
-                        while (!equals(endLat, lat) && !equals(endLng, lng)) ;
+                        //Set starter flag
+                        started = true;
+                        startIndex = i;
+                    } else {
+                        writeLine("analyzeManeuver", String.format("(%d) START '%s'. [DIFF] Lats: %f | %f -- Lngs: %f | %f.", i, oldManeuver, startLat, lat, startLng, lng));
                         //once they match the end coordinates, send nextCommand to BLE
-                        if (equals(endLat, lat) && equals(endLng, lng)) {
-                            writeLine(TAG, "end coordinates are equal", "sending read next command..........");
-                            sendData(nextCommand);
-                        }
                     }
-                } else {
-                    writeLine(TAG, String.format("lats: %f and %f are different. lngs: %f and %f are different", startLat, lat, startLng, lng));
-
+                    //If we're at the end of a maneuver
+                    if (equals(endLat, lat) && equals(endLng, lng)) {
+                        //Make sure we're at the end of the correct maneuver by checking index and starter flag
+                        if (started && startIndex == i) {
+                            writeLine("analyzeManeuver", String.format("(%d) END '%s'. [EQUAL] lats: %f | %f -- Lngs: %f | %f.", i, oldManeuver, endLat, lat, endLng, lng));
+                            writeLine("[SENT START]", "**Clearing Command**");
+                            sendData(nextCommand);
+                            oldManeuver = maneuver;
+                            maneuver = "";
+                            started = false;
+                        }
+                    } else {
+                        writeLine("analyzeManeuver", String.format("(%d) END '%s'. [DIFF] Lats: %f | %f -- Lngs: %f | %f.", i, oldManeuver, endLat, lat, endLng, lng), "maneuver not over yet");
+                    }
                 }
             }
         }
     }
 
     private void sendManeuver(String maneuver, String previousManeuver) {
-        if (previousManeuver != null) {
-            /*if (previousManeuver.equals(maneuver)) {   //if oldManeuver isn't empty AND it's the same as before, do nothing
-                writeLine("sendManeuver", String.format("oldManeuver is NOT empty AND oldManeuver == maneuver. %s == %s", oldManeuver, maneuver));
-            } else if*/
-            if (!previousManeuver.equals(maneuver)) {     //if this is a different maneuver than the last
-                writeLine("sendManeuver", "START", ".......................................");
-                //Is this the first maneuver?
-                //We need to check so we know when to send nextCommand.
-                // nextCommand should only be sent if a maneuver has already happened
-                if (!previousManeuver.equals(""))  //oldManeuver != empty means at least one maneuver has already happened
-                {                             //at this point, we can send nextCommand
-                    sendData(nextCommand);
-                }
-                //Analyze Maneuver
-                if (maneuver.contains("left")) {
-                    writeLine("sendData(left)", "sending maneuver left", maneuver);
-                    sendData(left);
-                    writeLine("sendData(LEFT)", "oldManeuver", previousManeuver);
-                    writeLine("sendManeuver", "END", ".......................................");
-                } else if (maneuver.contains("right")) {
-                    writeLine("sendData(right)", "sending maneuver right", maneuver);
-                    sendData(right);
-                    writeLine("sendData(RIGHT)", "oldManeuver", previousManeuver);
-                    writeLine("sendManeuver", "END", ".......................................");
-                } else if (maneuver.contains("uturn") || maneuver.contains("u-turn")) {
-                    writeLine("sendData(uturn)", "sending uturn maneuver", maneuver);
-                    sendData(uturn);
-                    writeLine("sendData(UTURN)", "oldManeuver", previousManeuver);
-                    writeLine("sendManeuver", "END", ".......................................");
-                } else {
-                    writeLine("maneuver", "didn't contain left, right or uturn");
-                    writeLine("sendManeuver", "END", ".......................................");
-                }
+        if (!previousManeuver.equals(maneuver)) {     //if this is a different maneuver than the last
+            writeLine("sendManeuver", "START", ".......................................");
+            //Is this the first maneuver?
+            //We need to check so we know when to send nextCommand.
+            // nextCommand should only be sent if a maneuver has already happened
+            if (!previousManeuver.equals(""))  //oldManeuver != empty means at least one maneuver has already happened
+            {                             //at this point, we can send nextCommand
+                sendData(nextCommand);
+            }
+            //Analyze Maneuver
+            if (maneuver.contains("left")) {
+                writeLine("sendData(left)", "sending maneuver left", maneuver);
+                sendData(left);
+                writeLine("sendData(LEFT)", "oldManeuver", previousManeuver);
+                writeLine("sendManeuver", "END", ".......................................");
+            } else if (maneuver.contains("right")) {
+                writeLine("sendData(right)", "sending maneuver right", maneuver);
+                sendData(right);
+                writeLine("sendData(RIGHT)", "oldManeuver", previousManeuver);
+                writeLine("sendManeuver", "END", ".......................................");
+            } else if (maneuver.contains("uturn") || maneuver.contains("u-turn")) {
+                writeLine("sendData(uturn)", "sending uturn maneuver", maneuver);
+                sendData(uturn);
+                writeLine("sendData(UTURN)", "oldManeuver", previousManeuver);
+                writeLine("sendManeuver", "END", ".......................................");
+            } else {
+                writeLine("maneuver", "didn't contain left, right or uturn");
+                writeLine("sendManeuver", "END", ".......................................");
             }
         }
     }
@@ -438,14 +444,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
 
     @Override
     public void populateCoordinates(Double lat, Double lng) {
-        destinationLatitude = lat;
-        destinationLongitude = lng;
+        destLat = lat;
+        destLng = lng;
     }
-
-    //    public void getLatLntFromTextAddress(String strAddress) {
-    //        String[] splitAddr = strAddress.split(" ");
-    //        BlinkmapGeocoder latLng = n
-    //    }
 
     public String getTextAddressFromLocation(Location location) {
         Geocoder geocoder;
@@ -610,6 +611,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             @Override
             public void run() {
                 //Make destination visible and enabled
+                enterDest.setEnabled(true);
+                enterDest.setVisibility(View.VISIBLE);
                 destinationText.setEnabled(true);
                 destinationText.setVisibility(View.VISIBLE);
                 btnDisconnect.setEnabled(true);
