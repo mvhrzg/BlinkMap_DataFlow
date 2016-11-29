@@ -39,12 +39,11 @@ import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, Uart.Callback, ObtainDirections.Response, BlinkmapGeocoder.Response {
-    private static final double HEADSUP_EPISLON = 0.0001;
     private static final double EPSILON = 0.00001;
 
     Button btnConnect, btnDisconnect;
     EditText destinationText;
-    TextView originText, oLat, oLng, enterDest;
+    TextView originText, oLat, oLng, destTitle, originTitle;
     public static final String TAG = MainActivity.class.getSimpleName();
 
     //UART & GATT connection
@@ -85,13 +84,13 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         initializeAdapter();
 
         //Set up buttons & texts
+        originTitle = (TextView) findViewById(R.id.originTitle);
         originText = (TextView) findViewById(R.id.displayOrigin);
         oLat = (TextView) findViewById(R.id.oLat);
         oLng = (TextView) findViewById(R.id.oLng);
-        enterDest = (TextView) findViewById(R.id.enterDest);
+        destTitle = (TextView) findViewById(R.id.destTitle);
         destinationText = (EditText) findViewById(R.id.inputDestination);
         btnConnect = (Button) findViewById(R.id.btnConnect);
-        //        btnStart = (Button) findViewById(R.id.btnStart);
         btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
 
         //Set up buttons and texts
@@ -107,58 +106,39 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public void setupClickListeners() {
 
         //Disable origin text
-        //        originText.setEnabled(false);
-        originText.setVisibility(View.INVISIBLE);
+        originTitle.setVisibility(View.VISIBLE);
 
         //Disable destination text
-        enterDest.setVisibility(View.INVISIBLE);
-        enterDest.setEnabled(false);
-
-        destinationText.setVisibility(View.INVISIBLE);
+        destTitle.setVisibility(View.VISIBLE);
         destinationText.setEnabled(false);
+        destinationText.setVisibility(View.VISIBLE);
 
         //Disable disconnect button
         btnDisconnect.setClickable(false);
         btnDisconnect.setEnabled(false);
-        btnDisconnect.setVisibility(View.INVISIBLE);
-
-        //Disable start transmitting button
-        //        btnStart.setClickable(false);
-        //        btnStart.setEnabled(false);
-        //        btnStart.setVisibility(View.INVISIBLE);
 
         btnConnect.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                toast("You clicked connect");
+                toast("Connecting...");
                 setUpBtnConnect();
             }
         });
-
-        //Sending data stops btnDisconnect from working
-        //        btnStart.setOnClickListener(new View.OnClickListener() {
-        //            @Override
-        //            public void onClick(View v) {
-        //                sendData(uart);//getNewLocation());
-        //            }
-        //        });
 
         btnDisconnect.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 writeLine("btnDisconnect", "Clicked to Disconnect");
                 client.disconnect();
-                writeLine("btnDisconnect", "sending disconnected", Arrays.toString(disconnected));
+                writeLine("btnDisconnect", "Sending disconnected command to BLE", Arrays.toString(disconnected));
                 sendData(disconnected);
                 uart.unregisterCallback(MainActivity.this);
                 uart.disconnect();
-                writeLine("btnDisconnect", "after disconnected", Arrays.toString(disconnected));
 
                 //Disable all input except for btnConnect
-                enterDest.setEnabled(false);
-                enterDest.setVisibility(View.INVISIBLE);
+                destTitle.setEnabled(false);
                 destinationText.setEnabled(false);
-                destinationText.setVisibility(View.INVISIBLE);
+                destinationText.setVisibility(View.VISIBLE);
                 btnDisconnect.setEnabled(false);
                 btnDisconnect.setClickable(false);
 
@@ -192,7 +172,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public void getDirections(double oLat, double oLng, double dLat, double dLng) {
         btnDisconnect.setClickable(true);
         btnDisconnect.setEnabled(true);
-        btnDisconnect.setVisibility(View.VISIBLE);
+//        btnDisconnect.setVisibility(View.VISIBLE);
 
         String[] urlParams = {String.valueOf(oLat), String.valueOf(oLng), String.valueOf(dLat), String.valueOf(dLng)};
 
@@ -272,7 +252,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //Get last know location after we request location updates (for accuracy)
         Location location = LocationServices.FusedLocationApi.getLastLocation(client);
 
-        originText.setEnabled(true);
+//        originText.setEnabled(true);
         originText.setVisibility(View.VISIBLE);
 
         //Set origin text as address
@@ -492,10 +472,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     }
 
     private void setUpBtnConnect() {
-        Log.i("btnConnect", "Clicked to Connect");
+        Log.i("btnConnect", "Clicked 'Connect'");
         //If adapter isn't initialized, initialize it
         if (!adapterInitialized()) {
-            writeLine("setUpBtnConnect", "adapterInitialized()", adapterInitialized());
             initializeAdapter();
         } else {    //if it is initialized, check if BLE is already paired
             writeLine("setUpBtnConnect", "adapterInitialized()", adapterInitialized());
@@ -505,13 +484,13 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 writeLine("setUpBtnConnect", "isBLEPaired", isBLEPaired(btAddress));
                 //check if adafruit object is null, and initialize it with the BLE device
                 if (adafruit == null) {
-                    writeLine("setUpBtnConnect", "adafruit is null. getting remote device ", btAddress);
+                    writeLine("setUpBtnConnect", "Adafruit is null. Getting remote device...", btAddress);
                     adafruit = adapter.getRemoteDevice(btAddress);
                     if (adafruit != null) {
                         connectServices();
                     }
                 } else {  //if adafruit object is not null
-                    writeLine("setUpBtnConnect", "Adafruit != null, calling uart.connectFirstAvalable");
+                    writeLine("setUpBtnConnect", "Adafruit not null.");
                     connectServices();
                 }
             } else {    //BLE is already paired
@@ -526,7 +505,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //if adafruit object is not null
         if (adafruit != null) {
             if (!isBLEPaired(btAddress)) {
-                writeLine("setUpBtnConnect", "adafruit no longer null, calling uart.connectFirstAvailable");
+                writeLine("setUpBtnConnect", "Adafruit no longer null. Connecting BLE...");
                 //connect BLE
                 uart.connectFirstAvailable();
             }
@@ -611,21 +590,19 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             @Override
             public void run() {
                 //Make destination visible and enabled
-                enterDest.setEnabled(true);
-                enterDest.setVisibility(View.VISIBLE);
+                destTitle.setEnabled(true);
+                destTitle.setVisibility(View.VISIBLE);
                 destinationText.setEnabled(true);
                 destinationText.setVisibility(View.VISIBLE);
                 btnDisconnect.setEnabled(true);
                 btnDisconnect.setClickable(true);
-                btnDisconnect.setVisibility(View.VISIBLE);
             }
         });
         while (!uart.isConnected()) ;
         uart.registerCallback(MainActivity.this);
         writeLine(TAG, "Connected!");
-        writeLine("setUpBtnConnect", "Calling client.connect()");
+        writeLine("setUpBtnConnect", "Connecting Location Services...");
         client.connect();
-        //        toast("CONNECTED!!!!!!");
     }
 
     @Override
@@ -639,9 +616,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
                 btnDisconnect.setClickable(false);
                 btnDisconnect.setEnabled(false);
-                //                btnStart = (Button) findViewById(R.id.btnStart);
-                //                btnStart.setClickable(false);
-                //                btnStart.setEnabled(false);
             }
         });
         toast("CONNECTION FAILED");
@@ -650,23 +624,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     @Override
     public void onDisconnected(Uart uart) {
         // Called when the UART device disconnected.
-        //        gatt.disconnect();
-        //        gatt.close();
         writeLine(TAG, "Disconnected!");
         if (client.isConnected()) {
             client.disconnect();
         }
-        //        runOnUiThread(new Runnable()
-        //        {
-        //            @Override
-        //            public void run()
-        //            {
-        //                btnDisconnect = (Button) findViewById(R.id.btnDisconnect);
-        //                btnDisconnect.setClickable(false);
-        //                btnDisconnect.setEnabled(false);
-        //            }
-        //        });
-        //        toast("DISCONNECTED");
     }
 
     @Override

@@ -5,6 +5,7 @@
     <string name="success">Connected Successfully!</string>
     <string name="connect">Connect BLE</string>
     <string name="disconnect">Disconnect BLE</string>
+    <string name="origin">Current Location</string>
     <string name="destination">Enter Destination</string>
     <string name="dummyDest">Address, City, State, Zip, Country</string>
 </resources>

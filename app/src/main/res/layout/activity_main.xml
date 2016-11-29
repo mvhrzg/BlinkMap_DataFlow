@@ -19,20 +19,33 @@
         android:textAppearance="@style/TextAppearance.AppCompat.Headline"
         android:textStyle="normal|bold"
         android:textColor="@android:color/black"
-        android:id="@+id/textView"
+        android:id="@+id/welcome"
         android:layout_centerHorizontal="true"
         android:layout_alignParentTop="true"/>
 
-    <!--Connect-->
 
-    <!--Origin text-->
-    <TextView
+    <!--Connect-->
+    <Button
+        android:text="@string/connect"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:id="@+id/displayOrigin"
-        android:layout_below="@+id/btnConnect"/>
+        android:id="@+id/btnConnect"
+        android:layout_marginTop="43dp"
+        android:layout_below="@+id/welcome"
+        android:layout_alignParentStart="true"
+        android:layout_marginStart="60dp"/>
 
-    <!--Origin latitude-->
+    <!--Disconnect-->
+    <Button
+        android:text="@string/disconnect"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/btnDisconnect"
+        android:layout_alignBaseline="@+id/btnConnect"
+        android:layout_alignBottom="@+id/btnConnect"
+        android:layout_toEndOf="@+id/btnConnect"/>
+
+    <!--Origin latitude (hidden)-->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -41,7 +54,7 @@
         android:layout_below="@+id/btnConnect"
         android:layout_centerHorizontal="true"/>
 
-    <!--Origin longitude-->
+    <!--Origin longitude (hidden)-->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -50,46 +63,52 @@
         android:layout_below="@+id/btnConnect"
         android:layout_centerHorizontal="true"/>
 
-    <!--Destination input-->
+    <!--Origin Title-->
+    <TextView
+        android:text="@string/origin"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/originTitle"
+        android:layout_marginTop="38dp"
+        android:textSize="18sp"
+        android:textColor="@color/colorPrimary"
+        android:layout_below="@+id/btnConnect"
+        android:layout_alignParentStart="true"/>
+
+    <!--Origin Text-->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/displayOrigin"
+        android:layout_below="@+id/originTitle"
+        android:layout_marginTop="11dp"
+        android:layout_alignParentStart="true"
+        android:textAppearance="@android:style/TextAppearance.Material.Medium.Inverse"
+        android:textColor="?android:attr/textColorTertiary"/>
+
+    <!--Destination Title-->
+
+    <!--Destination Input-->
+
     <TextView
         android:text="@string/destination"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:visibility="gone"
-        android:id="@+id/enterDest"
-        android:layout_above="@+id/inputDestination"
-        android:layout_centerHorizontal="true"/>
-
-    <Button
-        android:text="@string/connect"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:id="@+id/btnConnect"
-        android:layout_alignBaseline="@+id/btnDisconnect"
-        android:layout_alignBottom="@+id/btnDisconnect"
-        android:layout_toEndOf="@+id/displayOrigin"
-        android:layout_marginStart="56dp"/>
+        android:id="@+id/destTitle"
+        android:textColor="@color/colorPrimary"
+        android:textSize="18sp"
+        android:layout_centerVertical="true"
+        android:layout_alignParentStart="true"/>
 
     <EditText
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
         android:hint="@string/dummyDest"
-        android:layout_marginTop="158dp"
         android:id="@+id/inputDestination"
         android:inputType="textPostalAddress|textCapWords|textAutoCorrect|textAutoComplete"
         android:imeOptions="actionSend"
-        android:layout_below="@+id/displayOrigin"
-        android:layout_toEndOf="@+id/displayOrigin"/>
-
-    <Button
-        android:text="@string/disconnect"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="58dp"
-        android:id="@+id/btnDisconnect"
-        android:layout_marginStart="15dp"
-        android:layout_below="@+id/textView"
-        android:layout_toEndOf="@+id/btnConnect"/>
+        android:layout_below="@+id/destTitle"
+        android:layout_alignParentStart="true"/>
 
 
 </RelativeLayout>
