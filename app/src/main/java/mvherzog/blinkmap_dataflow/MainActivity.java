@@ -40,9 +40,11 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener, Uart.Callback, ObtainDirections.Response, BlinkmapGeocoder.Response {
     private static final double EPSILON = 0.00001;
+    private static final double HEADSUP = 0.0001;
 
     Button btnConnect, btnDisconnect;
     EditText destinationText;
+    InputMethodManager inputManager;
     TextView originText, oLat, oLng, destTitle, originTitle;
     public static final String TAG = MainActivity.class.getSimpleName();
 
@@ -68,7 +70,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private LocationRequest request;
     public String destination = "";
     public double destLat, destLng;
-    private boolean requested = false, started = false, ended = false;
+    private boolean requested = false, started = false;
     //ObtainDirections
     private String[] stepManeuver, stepStartLats, stepStartLngs, stepEndLats, stepEndLngs;
     private boolean executeDirectionsFinished, executeAddressFinished;
@@ -136,7 +138,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                 uart.disconnect();
 
                 //Disable all input except for btnConnect
-                destTitle.setEnabled(false);
+                destinationText.setText("");
                 destinationText.setEnabled(false);
                 destinationText.setVisibility(View.VISIBLE);
                 btnDisconnect.setEnabled(false);
@@ -158,9 +160,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
                     if (destination != null) {
                         getLatLntFromTextAddress(destination);
                     }
-                    //Collapse keyboard once 'Enter'
-                    InputMethodManager inputManager = (InputMethodManager) MainActivity.this.getSystemService(Context.INPUT_METHOD_SERVICE);
-                    inputManager.hideSoftInputFromWindow(MainActivity.this.getCurrentFocus().getWindowToken(), InputMethodManager.HIDE_NOT_ALWAYS);
                 }
 
                 return handled;
@@ -274,6 +273,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         if (executeAddressFinished && !executeDirectionsFinished && !requested) {
             getDirections(Double.valueOf(oLat.getText().toString()), Double.valueOf(oLng.getText().toString()), destLat, destLng);
             requested = true;
+            //Collapse keyboard once we get directions
+            inputManager = (InputMethodManager) MainActivity.this.getSystemService(Context.INPUT_METHOD_SERVICE);
+            inputManager.hideSoftInputFromWindow(MainActivity.this.getCurrentFocus().getWindowToken(), InputMethodManager.HIDE_NOT_ALWAYS);
         }
         handleNewLocation(location);
     }
@@ -292,52 +294,51 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public void analyzeManeuver(double lat, double lng) {
         Double startLat, startLng;
         Double endLat, endLng;
-        String maneuver = "";
+        String maneuver;
 
-        int startIndex = -1;
+        //loop through arrays and see if we get a match
+        for (int i = 0; i < stepManeuver.length; i++) {
+            //If this step has a maneuver
+            if (stepManeuver[i] != null) {
+                maneuver = stepManeuver[i];
+                //Get the starting and corresponding ending coordinates
+                startLat = Double.valueOf(stepStartLats[i]);
+                startLng = Double.valueOf(stepStartLngs[i]);
+                endLat = Double.valueOf(stepEndLats[i]);
+                endLng = Double.valueOf(stepEndLngs[i]);
+                //if we're at the start of a maneuver, send the maneuver to BLE
+                if (!started) {    //guarantees even the first maneuver
+                    if (shouldStart(startLat, lat) && shouldStart(startLng, lng)) {
+                        writeLine("[EQUAL Starts]", "Sending command", maneuver);
+                        //Send to BLE
+                        sendManeuver(maneuver, oldManeuver);
+                        //Set starter flag
+                        started = true;
 
-        if (executeDirectionsFinished) {
-            //loop through arrays and see if we get a match
-            for (int i = 0; i < stepManeuver.length; i++) {
-                //If this step has a maneuver
-                if (stepManeuver[i] != null) {
-                    //Get the starting and corresponding ending coordinates
-                    startLat = Double.valueOf(stepStartLats[i]);
-                    startLng = Double.valueOf(stepStartLngs[i]);
-                    endLat = Double.valueOf(stepEndLats[i]);
-                    endLng = Double.valueOf(stepEndLngs[i]);
-                    //if we're at the start of a maneuver, send the maneuver to BLE
-                    if (!started) {    //guarantees even the first maneuver
-                        if (equals(startLat, lat) && equals(startLng, lng)) {
-                            //Get the current maneuver
-                            maneuver = stepManeuver[i];
-                            writeLine("analyzeManeuver",
-                                      String.format("(%d) START '%s' (oldManeuver: %s). [EQUAL] Lats: %f | %f -- Lngs: %f | %f", i, maneuver, oldManeuver, startLat, lat, startLng, lng)
-                            );
-                            writeLine("[EQUAL Starts]", "Sending command", maneuver);
-                            //Send to BLE
-                            sendManeuver(maneuver, oldManeuver);
-                            //Set starter flag
-                            started = true;
-                            checkEnds(lat, endLat, lng, endLng, maneuver); //checks for end of move and sets started to false
-                            writeLine("[AFTER CHECK_END]", String.format("Started=%b", started));
-                        } else {
-                            writeLine("analyzeManeuver", String.format("(%d) START '%s'. [DIFF] Lats: %f | %f -- Lngs: %f | %f.", i, oldManeuver, startLat, lat, startLng, lng));
-                        }
+                        writeLine("[AFTER checkEnds]", String.format("[Started=%b], [oldManeuver=%s]", started, oldManeuver));
+                    } else {
+                        writeLine("analyzeManeuver", String.format("(%d) START '%s'. [DIFF] Lats: %f | %f -- Lngs: %f | %f.", i, oldManeuver, startLat, lat, startLng, lng));
                     }
+                }
+                if (started) {
+                    checkEnds(lat, endLat, lng, endLng, maneuver); //checks for end of move and sets started to false
                 }
             }
         }
     }
 
     public void checkEnds(Double currLat, Double endLat, Double currLng, Double endLng, String maneuver) {
-        if (equals(currLat, endLat) && equals(currLng, endLat)) {
+        writeLine("checkEnds", "called");
+        if (shouldEnd(currLat, endLat) && shouldStart(currLng, endLat)) {
             writeLine("checkEnds", String.format("END '%s'. [EQUAL] lats: %f | %f -- Lngs: %f | %f.", oldManeuver, endLat, currLat, endLng, currLng));
             writeLine("[FOUND END]", "**Clearing Command**");
             sendData(nextCommand);
             oldManeuver = maneuver;
             started = false;
-            writeLine("checkEnds", "Started = FALSE");
+            writeLine("[INSIDE checkEnds]", "Started = ", started);
+        } else{
+            writeLine("checkEnds", "[DIFF] end coordinates ");
+
         }
     }
 
@@ -373,8 +374,15 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     }
 
     //Compare doubles
-    public static boolean equals(double a, double b) {
+    public boolean shouldStart(double a, double b) {
         if (a == b) { return true; }
+        //CHANGE BACK TO EPSILON WHEN DONE TESTING
+        return Math.abs(a - b) < HEADSUP * Math.max(Math.abs(a), Math.abs(b));
+    }
+
+    public boolean shouldEnd(double a, double b) {
+        if (a == b) { return true; }
+        //CHANGE BACK TO EPSILON WHEN DONE TESTING
         return Math.abs(a - b) < EPSILON * Math.max(Math.abs(a), Math.abs(b));
     }
 
@@ -511,9 +519,9 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     //This method will receive JSON
     public void sendData(byte[] hexCommand) {
         if (uart.isConnected()) {
-            writeLine("sendData", "Sending", Uart.bytesToHex(hexCommand));
+            writeLine("sendData", "Sending", Arrays.toString(hexCommand));
             uart.send(hexCommand);
-            writeLine("sendData", "Sent", Uart.bytesToHex(hexCommand));
+            writeLine("sendData", "Sent", Arrays.toString(hexCommand));
         }
     }
 
@@ -560,9 +568,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     public void onDisconnected(Uart uart) {
         // Called when the UART device disconnected.
         writeLine(TAG, "Disconnected!");
+        destinationText.setText("");
         if (client.isConnected()) {
             client.disconnect();
         }
+
+        btnDisconnect.setClickable(false);
     }
 
     @Override
@@ -658,7 +669,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         //        {
         //            for (BluetoothDevice device : pairedDevices)
         //            {
-        //                if (device.getAddress().equals(address))
+        //                if (device.getAddress().shouldStart(address))
         //                {
         //                    adafruit = device;
         //                    return true;

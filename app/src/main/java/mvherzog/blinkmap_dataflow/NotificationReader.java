@@ -177,7 +177,7 @@ public class NotificationReader extends NotificationListenerService
 //    @Override
 //    public void onNotificationPosted(StatusBarNotification sbn) {
 //        Intent msg = new Intent("Msg");
-//        if (sbn.getPackageName().equals("com.google.android.apps.maps")) {
+//        if (sbn.getPackageName().shouldStart("com.google.android.apps.maps")) {
 //            writeLine("GM", "got Google Maps notification");
 //            Bundle extras = sbn.getNotification().extras;
 //            String text;
