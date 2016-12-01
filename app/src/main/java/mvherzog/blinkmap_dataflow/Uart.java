@@ -76,30 +76,25 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     private boolean disAvailable;
 
     //TAG
-    public static final String TAG = Uart.class.getSimpleName();
+    private static final String TAG = Uart.class.getSimpleName();
 
     // Queues for characteristic read (synchronous)
     private Queue<BluetoothGattCharacteristic> readQueue;
 
     // Interface for a BluetoothLeUart client to be notified of UART actions.
-    public interface Callback {
-        public void onConnected(Uart uart);
-
-        public void onConnectFailed(Uart uart);
-
-        public void onDisconnected(Uart uart);
-
-        public void onReceive(Uart uart, BluetoothGattCharacteristic rx);
-
-        public void onDeviceFound(BluetoothDevice device);
-
-        public void onDeviceInfoAvailable();
+    interface Callback {
+        void onConnected(Uart uart);
+        void onConnectFailed(Uart uart);
+        void onDisconnected(Uart uart);
+        void onReceive(Uart uart, BluetoothGattCharacteristic rx);
+        void onDeviceFound(BluetoothDevice device);
+        void onDeviceInfoAvailable();
     }
 
-    public Uart(Context context) {
+    Uart(Context context) {
         super();
         this.context = context;
-        this.callbacks = new WeakHashMap<Callback, Object>();
+        this.callbacks = new WeakHashMap<>();
         this.adapter = BluetoothAdapter.getDefaultAdapter();
         this.gatt = null;
         this.tx = null;
@@ -111,90 +106,67 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         this.disAvailable = false;
         this.connectFirst = false;
         this.writeInProgress = false;
-        this.readQueue = new ConcurrentLinkedQueue<BluetoothGattCharacteristic>();
+        this.readQueue = new ConcurrentLinkedQueue<>();
     }
 
-    // Return instance of BluetoothGatt.
     public BluetoothGatt getGatt() {
         return gatt;
     }
 
     // Return true if connected to UART device, false otherwise.
-    public boolean isConnected() {
+    boolean isConnected() {
         return (tx != null && rx != null);
     }
 
-    public String getDeviceInfo() {
+    String getDeviceInfo() {
         if (tx == null || !disAvailable) {
             // Do nothing if there is no connection.
             return "";
         }
-        StringBuilder sb = new StringBuilder();
-        sb.append("Manufacturer : " + disManuf.getStringValue(0) + "\n");
-        sb.append("Model        : " + disModel.getStringValue(0) + "\n");
-        sb.append("Firmware     : " + disSWRev.getStringValue(0) + "\n");
-        return sb.toString();
+        return "Manufacturer : " + disManuf.getStringValue(0) + "\n" +
+                "Model        : " + disModel.getStringValue(0) + "\n" +
+                "Firmware     : " + disSWRev.getStringValue(0) + "\n";
     }
-
-    ;
 
     public boolean deviceInfoAvailable() {
         return disAvailable;
     }
 
-    // Send data to connected UART device.
-    public void send(byte[] data) {
+    void send(byte[] data) {
         if (tx == null || data == null || data.length == 0) {
-            // Do nothing if there is no connection or message to send.
             return;
         }
 
-        // Update TX characteristic value.  Note the setValue overload that takes a byte array must be used.
         tx.setValue(data);
-        writeInProgress = true; // Set the write in progress flag
-        writeLine("Writing [tx] characteristic: ", bytesToHex(tx.getValue()));
+        writeInProgress = true;
+        writeLine(String.format("Writing [tx]. Bytes: '%s' | String: '%s'", bytesToHex(tx.getValue()), tx.getStringValue(0)));
         tx.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
         gatt.writeCharacteristic(tx);
-        writeLine("before writeInProgress cleared");
-        //        // ToDo: Update to include a timeout in case this goes into the weeds
+
         while (writeInProgress) {
-            //            writeLine("writeInProgress", writeInProgress);
             try {
-                Thread.sleep(100);  //11/26/2016 - same idea as "while (!ble.isConnected)delay(500);"
+                Thread.sleep(100);
             }
             catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }
-        writeLine("after writeInProgress cleared");
-    }
-
-    // Send data to connected UART device.
-    public void send(String data) {
-        final byte[] buffer = data.getBytes();
-        final boolean writeRequest = (tx.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) > 0;
-        if (writeRequest) {
-            send(buffer);
-        }
-        if (data != null && !data.isEmpty()) {
-            send(data.getBytes(Charset.forName("UTF-8")));
-            writeLine("Data sent", data);
-        }
+        writeLine("After characteristic write cleared");
     }
 
     // Register the specified callback to receive UART callbacks.
-    public void registerCallback(Callback callback) {
+    void registerCallback(Callback callback) {
         callbacks.put(callback, null);
     }
 
     // Unregister the specified callback.
-    public void unregisterCallback(Callback callback) {
+    void unregisterCallback(Callback callback) {
         callbacks.remove(callback);
     }
 
     // Disconnect to a device if currently connected.
-    public void disconnect() {
-        writeLine("disconnect(). gatt = ", gatt);
+    void disconnect() {
+        writeLine("Disconnect()");
         if (gatt != null) {
             gatt.disconnect();
             gatt.close();
@@ -205,22 +177,20 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     }
 
     // Stop any in progress UART device scan.
-    public void stopScan() {
+    private void stopScan() {
         if (adapter != null) {
             adapter.stopLeScan(this);
         }
     }
 
-    // Start scanning for BLE UART devices.  Registered callback's onDeviceFound method will be called
-    // when devices are found during scanning.
-    public void startScan() {
+    private void startScan() {
         if (adapter != null) {
             adapter.startLeScan(this);
         }
     }
 
     // Connect to the first available UART device.
-    public void connectFirstAvailable() {
+    void connectFirstAvailable() {
         // Disconnect to any connected device.
         disconnect();
         // Stop any in progress device scan.
@@ -234,10 +204,9 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     @Override
     public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
         super.onConnectionStateChange(gatt, status, newState);
-        writeLine("onConnStateChanged", String.format("Status: %s, newState: %s", parseConnectionError(status), parseConnectionError(newState)));
         if (newState == BluetoothGatt.STATE_CONNECTED) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                writeLine("Connected to adafruit. Start discovering services");
+                writeLine("Connected to Adafruit. Start discovering services");
                 // Connected to device, start discovering services.
                 if (!gatt.discoverServices()) {
                     // Error starting service discovery.
@@ -248,10 +217,8 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
                 connectFailure();
             }
         } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-            // Disconnected, notify callbacks of disconnection.
             rx = null;
             tx = null;
-            //Added by me
             gatt.disconnect();
             gatt.close();
             notifyOnDisconnected(this);
@@ -280,43 +247,21 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         tx = gatt.getService(UART_UUID).getCharacteristic(TX_UUID);
         rx = gatt.getService(UART_UUID).getCharacteristic(RX_UUID);
 
-        // Save reference to each DIS characteristic.
-        disManuf = gatt.getService(DIS_UUID).getCharacteristic(DIS_MANUF_UUID);
-        disModel = gatt.getService(DIS_UUID).getCharacteristic(DIS_MODEL_UUID);
-        disHWRev = gatt.getService(DIS_UUID).getCharacteristic(DIS_HWREV_UUID);
-        disSWRev = gatt.getService(DIS_UUID).getCharacteristic(DIS_SWREV_UUID);
-
-        // Add device information characteristics to the read queue
-        // These need to be queued because we have to wait for the response to the first
-        // read request before a second one can be processed (which makes you wonder why they
-        // implemented this with async logic to begin with???)
-        readQueue.offer(disManuf);
-        readQueue.offer(disModel);
-        readQueue.offer(disHWRev);
-        readQueue.offer(disSWRev);
-
-        // Request a dummy read to get the device information queue going
-        //        writeLine(TAG, String.format("Requesting dummy read : %b", gatt.readCharacteristic(disManuf)));
-
-        // Setup notifications on RX characteristic changes (i.e. data received).
-        // First call setCharacteristicNotification to enable notification.
         if (!gatt.setCharacteristicNotification(rx, true)) {
-            writeLine("couldn't set characteristic notification for rx = " + rx.getStringValue(0));
-            // Stop if the characteristic notification setup failed.
+            writeLine("Couldn't set characteristic notification for rx = " + rx.getStringValue(0));
             connectFailure();
             return;
         }
-        // Next update the RX characteristic's client descriptor to enable notifications.
         BluetoothGattDescriptor desc = rx.getDescriptor(CLIENT_UUID);
         if (desc == null) {
-            writeLine("rx.desc = null");
+            writeLine("[rx] = null");
             // Stop if the RX characteristic has no client descriptor.
             connectFailure();
             return;
         }
         desc.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
         if (!gatt.writeDescriptor(desc)) {
-            writeLine("couldn't write desc: ", bytesToHex(desc.getValue()));
+            writeLine("Couldn't write descriptor", bytesToHex(desc.getValue()));
             // Stop if the client descriptor could not be written.
             connectFailure();
             return;
@@ -328,25 +273,22 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     @Override
     public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-        writeLine("onCharacteristicChanged", characteristic.getStringValue(0));
         super.onCharacteristicChanged(gatt, characteristic);
         notifyOnReceive(this, characteristic);
     }
 
     @Override
     public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-        writeLine("onCharacteristicRead()", characteristic.getStringValue(0));
         super.onCharacteristicRead(gatt, characteristic, status);
 
         if (status == BluetoothGatt.GATT_SUCCESS) {
-            writeLine("Read characteristic! " + characteristic.getUuid(), characteristic.getStringValue(0));
+            writeLine("Read characteristic", characteristic.getStringValue(0));
             // Check if there is anything left in the queue
             BluetoothGattCharacteristic nextRequest = readQueue.poll();
             if (nextRequest != null) {
                 // Send a read request for the next item in the queue
                 gatt.readCharacteristic(nextRequest);
             } else {
-                // We've reached the end of the queue
                 disAvailable = true;
                 notifyOnDeviceInfoAvailable();
             }
@@ -358,13 +300,11 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-        writeLine("onCharacteristicWrite()");//, String.format("Charactersitic value: %s, writeInProgress = %b", characteristic.getStringValue(0), writeInProgress));
-
         super.onCharacteristicWrite(gatt, characteristic, status);
 
         if (status == BluetoothGatt.GATT_SUCCESS) {
             writeInProgress = false;
-            writeLine("Characteristic write successful", String.format("Value = %s, writeInProgress= %b", characteristic.getStringValue(0), writeInProgress));
+            writeLine(String.format("Wrote characteristic '%s'", characteristic.getStringValue(0)));
         }
         writeInProgress = false;
     }
@@ -380,22 +320,19 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         notifyOnDeviceFound(device);
         // Connect to first found device if required.
         if (connectFirst) {
-            writeLine("onLeScan()", String.format("connectFirst: %b", connectFirst));
             // Stop scanning for devices.
             writeLine("onLeScan()", "Stopping scan...");
             stopScan();
             // Prevent connections to future found devices.
             connectFirst = false;
-            writeLine("onLeScan()", String.format("connectFirst: %b", connectFirst));
             // Connect to device.
-            writeLine("onLeScan()", "calling device.connectGatt(context, true, this)");
-            gatt = device.connectGatt(context, true, this); //originally true
+            gatt = device.connectGatt(context, true, this);
         }
     }
 
-    final protected static char[] hexArray = "0123456789ABCDEF".toCharArray();
+    private final static char[] hexArray = "0123456789ABCDEF".toCharArray();
 
-    public static String bytesToHex(byte[] bytes) {
+    static String bytesToHex(byte[] bytes) {
         char[] hexChars = new char[bytes.length * 2];
         for (int j = 0; j < bytes.length; j++) {
             int v = bytes[j] & 0xFF;
@@ -405,7 +342,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         return new String(hexChars);
     }
     
-    public static String parseConnectionError(final int error) {
+    private static String parseConnectionError(final int error) {
         switch (error) {
             case BluetoothGatt.GATT_SUCCESS:
                 return "SUCCESS/STATE_DISCONNECTED";
@@ -434,7 +371,6 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
 
     // Private functions to simplify the notification of all callbacks of a certain event.
     private void notifyOnConnected(Uart uart) {
-        writeLine("notifyOnConnected", "callback.keySet() = " + callbacks.keySet());
         for (Callback cb : callbacks.keySet()) {
             if (cb != null) {
                 cb.onConnected(uart);
@@ -443,8 +379,6 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     }
 
     private void notifyOnConnectFailed(Uart uart) {
-        //        toast("Couldn't connect to Adafruit. Please press Connect again.");
-        writeLine("notifyOnConnectFailed()", "Couldn't connect to Adafruit. Please press Connect again.");
         for (Callback cb : callbacks.keySet()) {
             if (cb != null) {
                 cb.onConnectFailed(uart);
@@ -453,7 +387,6 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     }
 
     private void notifyOnDisconnected(Uart uart) {
-        writeLine("notifyOnDisconnected", "callback.keySet() = " + callbacks.keySet());
         for (Callback cb : callbacks.keySet()) {
             if (cb != null) {
                 cb.onDisconnected(uart);
@@ -462,7 +395,6 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     }
 
     private void notifyOnReceive(Uart uart, BluetoothGattCharacteristic rx) {
-        writeLine("notifyOnReceive", "callback.keySet() = " + callbacks.keySet() + " rx = " + rx.getStringValue(0));
         for (Callback cb : callbacks.keySet()) {
             if (cb != null) {
                 cb.onReceive(uart, rx);
@@ -471,7 +403,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     }
 
     private void notifyOnDeviceFound(BluetoothDevice device) {
-        writeLine("notifyOnDeviceFound", String.format("deviceName = %s, bondState = %d", device.getName(), device.getBondState()));
+        writeLine("Found device", String.format("%s (%s)", device.getAddress(), device.getName()));
         for (Callback cb : callbacks.keySet()) {
             if (cb != null) {
                 cb.onDeviceFound(device);
@@ -480,7 +412,6 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
     }
 
     private void notifyOnDeviceInfoAvailable() {
-        writeLine("notifyOnDeviceInfoAvailable", "callback.keySet() = " + callbacks.keySet());
         for (Callback cb : callbacks.keySet()) {
             if (cb != null) {
                 cb.onDeviceInfoAvailable();
@@ -488,19 +419,14 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
         }
     }
 
-    // Notify callbacks of connection failure, and reset connection state.
     private void connectFailure() {
-        writeLine("connectFailure()");
         rx = null;
         tx = null;
         notifyOnConnectFailed(this);
     }
 
-    // Filtering by custom UUID is broken in Android 4.3 and 4.4, see:
-    //   http://stackoverflow.com/questions/18019161/startlescan-with-128-bit-uuids-doesnt-work-on-native-android-ble-implementation?noredirect=1#comment27879874_18019161
-    // This is a workaround function from the SO thread to manually parse advertisement data.
     private List<UUID> parseUUIDs(final byte[] advertisedData) {
-        List<UUID> uuids = new ArrayList<UUID>();
+        List<UUID> uuids = new ArrayList<>();
 
         int offset = 0;
         while (offset < (advertisedData.length - 2)) {
@@ -532,9 +458,7 @@ public class Uart extends BluetoothGattCallback implements BluetoothAdapter.LeSc
                             uuids.add(new UUID(leastSignificantBit, mostSignificantBit));
                         }
                         catch (IndexOutOfBoundsException e) {
-                            // Defensive programming.
-                            //Log.e(LOG_TAG, e.toString());
-                            continue;
+                            e.printStackTrace();
                         }
                         finally {
                             // Move the offset to read the next uuid.

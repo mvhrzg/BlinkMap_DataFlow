@@ -1,40 +1,31 @@
 package mvherzog.blinkmap_dataflow;
 
-import android.content.Context;
 import android.os.AsyncTask;
-import android.util.Log;
-
-import com.google.android.gms.maps.model.LatLng;
-
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
-public class ObtainDirections extends AsyncTask<String, JSONArray, JSONArray> {
+class ObtainDirections extends AsyncTask<String, JSONArray, JSONArray> {
     private static final String TAG = ObtainDirections.class.getSimpleName();
-    final String key = "AIzaSyDx19YRUPUR38pUId34rkR7b8L3z61RTGA";
     public Response r = null;
 
-    public ObtainDirections(Response delegate) {
+    ObtainDirections(Response delegate) {
         r = delegate;
     }
 
-    public interface Response {
+    interface Response {
         void populateDirectionArrays(String[] rManeuvers, String[] startLats, String[] startLngsEnd, String[] endLats, String[] endLngs);
-
         void onExecuteFinished();
-
     }
 
     @Override
     protected JSONArray doInBackground(String... request) {
-
+        final String key = "AIzaSyDx19YRUPUR38pUId34rkR7b8L3z61RTGA";
         String requestString = "https://maps.googleapis.com/maps/api/directions/json?";
         requestString += "origin=" + request[0] + "," + request[1];
         requestString += "&destination=" + request[2] + "," + request[3];
@@ -42,13 +33,15 @@ public class ObtainDirections extends AsyncTask<String, JSONArray, JSONArray> {
         writeLine("requestString", requestString);
         String response = "";
         JSONObject jsonResponse;
+
         try {
             URL url = new URL(requestString);
             HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
             if (httpURLConnection.getResponseCode() == HttpURLConnection.HTTP_OK) {
 
                 //Make disconnect button enabled, visible and clickable
-                BufferedReader input = new BufferedReader(new InputStreamReader(httpURLConnection.getInputStream()));
+                BufferedReader input = new BufferedReader(
+                        new InputStreamReader(httpURLConnection.getInputStream()));
                 String line;
                 while ((line = input.readLine()) != null) {
                     response += line;
@@ -77,23 +70,16 @@ public class ObtainDirections extends AsyncTask<String, JSONArray, JSONArray> {
         JSONObject step;
         JSONArray steps;
         JSONObject start_location;
-        JSONObject end_location; //This is where moves happen
+        JSONObject end_location;
 
         //response arrays & manipulation string
-        String maneuver, trimmedManeuver;
+        String maneuver;
         String[] maneuvers;
         String[] startLats, startLngs, endLats, endLngs;
 
         if (legs != null) {
             try {
                 leg = legs.getJSONObject(0);
-                //                    writeLine(String.format("leg.Object[%d]", i), leg.toString());
-                //                    Iterator<String> legsObjs = leg.keys();
-                //                    while(legsObjs.hasNext()){
-                //                        String key = (String) legsObjs.next();
-                //                        String value = leg.getString(key);
-                //                        writeLine("objects in legs", value);
-                //                    }
                 steps = leg.getJSONArray("steps");
 
                 //initialize arrays
@@ -103,7 +89,6 @@ public class ObtainDirections extends AsyncTask<String, JSONArray, JSONArray> {
                 endLats = new String[steps.length()];
                 endLngs = new String[steps.length()];
 
-                //                writeLine("steps", steps.toString());
                 for (int i = 0; i < steps.length(); i++) {
                     step = steps.getJSONObject(i);
 
@@ -125,8 +110,6 @@ public class ObtainDirections extends AsyncTask<String, JSONArray, JSONArray> {
                     //insert end locations
                     endLats[i] = String.valueOf(end_location.get("lat"));
                     endLngs[i] = String.valueOf(end_location.get("lng"));
-                    //                    }
-
                 }
 
                 //Sending the arrays back to MainActivity

@@ -2,6 +2,7 @@
   <dictionary name="mherzog">
     <words>
       <w>adafruit</w>
+      <w>addr</w>
       <w>blinkmap</w>
       <w>dataflow</w>
       <w>geocoder</w>

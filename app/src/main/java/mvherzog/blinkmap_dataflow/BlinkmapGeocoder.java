@@ -1,13 +1,10 @@
 package mvherzog.blinkmap_dataflow;
 
 import android.os.AsyncTask;
-
 import com.google.android.gms.maps.model.LatLng;
-
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -18,13 +15,12 @@ public class BlinkmapGeocoder extends AsyncTask<String, LatLng, LatLng> {
     private static final String TAG = BlinkmapGeocoder.class.getSimpleName();
     public BlinkmapGeocoder.Response r = null;
 
-    public interface Response {
+    interface Response {
         void populateCoordinates(Double lat, Double lng);
-
         void onExecuteAddressFinished();
     }
 
-    public BlinkmapGeocoder(Response delegate) {
+    BlinkmapGeocoder(Response delegate) {
         r = delegate;
     }
 
@@ -33,12 +29,12 @@ public class BlinkmapGeocoder extends AsyncTask<String, LatLng, LatLng> {
         final String key = "AIzaSyDx19YRUPUR38pUId34rkR7b8L3z61RTGA";
         LatLng dest;
         String requestString = "https://maps.googleapis.com/maps/api/geocode/json?address=";
+
         for (String i : addr) {
             requestString += "+";
             requestString += i;
         }
         requestString += "&key=" + key;
-
         writeLine("requestString", requestString);
 
         String response = "";
@@ -50,7 +46,8 @@ public class BlinkmapGeocoder extends AsyncTask<String, LatLng, LatLng> {
             if (httpURLConnection.getResponseCode() == HttpURLConnection.HTTP_OK) {
 
                 //Make disconnect button enabled, visible and clickable
-                BufferedReader buffer = new BufferedReader(new InputStreamReader(httpURLConnection.getInputStream()));
+                BufferedReader buffer = new BufferedReader(
+                        new InputStreamReader(httpURLConnection.getInputStream()));
                 String line;
                 while ((line = buffer.readLine()) != null) {
                     response += line;
