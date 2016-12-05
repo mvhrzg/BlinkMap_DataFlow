@@ -69,7 +69,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private GoogleApiClient client;
     private LocationRequest request;
     public String destination = "";
-    public double destLat, destLng;
+    public double destLat, destLng, endLat, endLng;
     private boolean requested = false, started = false;
     //ObtainDirections
     private String[] stepManeuver, stepStartLats, stepStartLngs, stepEndLats, stepEndLngs;
@@ -291,85 +291,67 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         }
     }
 
+    /**
+     * Loops through direction arrays and matches current coordinates to starting coordinates.
+     * Calls checkEnds.
+     *
+     * @param lat Current latitude
+     * @param lng Current longitude
+     */
     public void analyzeManeuver(double lat, double lng) {
-        Double startLat, startLng;
-        Double endLat, endLng;
+        double startLat, startLng;
         String maneuver;
 
-        //loop through arrays and see if we get a match
         for (int i = 0; i < stepManeuver.length; i++) {
-            //If this step has a maneuver
-            if (stepManeuver[i] != null) {
-                maneuver = stepManeuver[i];
-                //Get the starting and corresponding ending coordinates
-                startLat = Double.valueOf(stepStartLats[i]);
-                startLng = Double.valueOf(stepStartLngs[i]);
-                endLat = Double.valueOf(stepEndLats[i]);
-                endLng = Double.valueOf(stepEndLngs[i]);
-                //if we're at the start of a maneuver, send the maneuver to BLE
-                if (!started) {    //guarantees even the first maneuver
+            if (!started) {
+                if (stepManeuver[i] != null) {      //If this step has a maneuver
+                    maneuver = stepManeuver[i];
+                    //Get the starting and corresponding ending coordinates
+                    startLat = Double.valueOf(stepStartLats[i]);
+                    startLng = Double.valueOf(stepStartLngs[i]);
+                    endLat = Double.valueOf(stepEndLats[i]);
+                    endLng = Double.valueOf(stepEndLngs[i]);
                     if (shouldStart(startLat, lat) && shouldStart(startLng, lng)) {
-                        writeLine("[EQUAL Starts]", "Sending command", maneuver);
-                        //Send to BLE
-                        sendManeuver(maneuver, oldManeuver);
-                        //Set starter flag
-                        started = true;
-
-                        writeLine("[AFTER checkEnds]", String.format("[Started=%b], [oldManeuver=%s]", started, oldManeuver));
-                    } else {
-                        writeLine("analyzeManeuver", String.format("(%d) START '%s'. [DIFF] Lats: %f | %f -- Lngs: %f | %f.", i, oldManeuver, startLat, lat, startLng, lng));
+                        sendManeuver(maneuver, oldManeuver);    //Send to BLE
+                        //                        oldManeuver = maneuver;
+                        started = true;                         //Set starter flag
                     }
                 }
                 if (started) {
-                    checkEnds(lat, endLat, lng, endLng, maneuver); //checks for end of move and sets started to false
+                    checkEnds(lat, endLat, lng, endLng);
                 }
             }
         }
     }
 
-    public void checkEnds(Double currLat, Double endLat, Double currLng, Double endLng, String maneuver) {
-        writeLine("checkEnds", "called");
-        if (shouldEnd(currLat, endLat) && shouldStart(currLng, endLat)) {
-            writeLine("checkEnds", String.format("END '%s'. [EQUAL] lats: %f | %f -- Lngs: %f | %f.", oldManeuver, endLat, currLat, endLng, currLng));
-            writeLine("[FOUND END]", "**Clearing Command**");
-            sendData(nextCommand);
-            oldManeuver = maneuver;
+    public boolean checkEnds(double currLat, double endLat, double currLng, double endLng) {
+        if (shouldEnd(currLat, endLat) && shouldEnd(currLng, endLng)) {
+            sendData(nextCommand);      //tell BLE to stop blinking
             started = false;
-            writeLine("[INSIDE checkEnds]", "Started = ", started);
-        } else{
-            writeLine("checkEnds", "[DIFF] end coordinates ");
-
         }
+        return started; //returns true until the move ends
     }
 
     private void sendManeuver(String maneuver, String previousManeuver) {
-        if (!previousManeuver.equals(maneuver)) {     //if this is a different maneuver than the last
-            writeLine("sendManeuver", "START", ".......................................");
-            // nextCommand should only be sent if a maneuver has already happened
-            if (!previousManeuver.equals(""))  //oldManeuver != empty means at least one maneuver has already happened
-            {                             //at this point, we can send nextCommand
-                sendData(nextCommand);
-            }
-            //Analyze Maneuver
-            if (maneuver.contains("left")) {
-                writeLine("sendData(left)", "sending maneuver left", maneuver);
-                sendData(left);
-                writeLine("sendData(LEFT)", "oldManeuver", previousManeuver);
-                writeLine("sendManeuver", "END", ".......................................");
-            } else if (maneuver.contains("right")) {
-                writeLine("sendData(right)", "sending maneuver right", maneuver);
-                sendData(right);
-                writeLine("sendData(RIGHT)", "oldManeuver", previousManeuver);
-                writeLine("sendManeuver", "END", ".......................................");
-            } else if (maneuver.contains("uturn") || maneuver.contains("u-turn")) {
-                writeLine("sendData(uturn)", "sending uturn maneuver", maneuver);
-                sendData(uturn);
-                writeLine("sendData(UTURN)", "oldManeuver", previousManeuver);
-                writeLine("sendManeuver", "END", ".......................................");
-            } else {
-                writeLine("maneuver", "didn't contain left, right or uturn");
-                writeLine("sendManeuver", "END", ".......................................");
-            }
+        //Analyze Maneuver
+        if (maneuver.contains("left")) {
+            writeLine("sendData(left)", "sending maneuver left", maneuver);
+            sendData(left);
+            writeLine("sendData(LEFT)", "oldManeuver", previousManeuver);
+            writeLine("sendManeuver", "END", ".......................................");
+        } else if (maneuver.contains("right")) {
+            writeLine("sendData(right)", "sending maneuver right", maneuver);
+            sendData(right);
+            writeLine("sendData(RIGHT)", "oldManeuver", previousManeuver);
+            writeLine("sendManeuver", "END", ".......................................");
+        } else if (maneuver.contains("uturn") || maneuver.contains("u-turn")) {
+            writeLine("sendData(uturn)", "sending uturn maneuver", maneuver);
+            sendData(uturn);
+            writeLine("sendData(UTURN)", "oldManeuver", previousManeuver);
+            writeLine("sendManeuver", "END", ".......................................");
+        } else {
+            writeLine("maneuver", "didn't contain left, right or uturn");
+            writeLine("sendManeuver", "END", ".......................................");
         }
     }
 
